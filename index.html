@@ -1081,7 +1081,8 @@ function normalizarRubro(r, ingreso){
     prioridad: Number(r.prioridad)||99,
     modo: ["valor","pct","pctIngreso"].includes(r.modo) ? r.modo : (r.tipo==="Fijo" ? "valor" : "pct"),
     valor: Number(r.valor)||0,
-    pct: Number(r.pct)||0
+    pct: Number(r.pct)||0,
+    diaPago: Number(r.diaPago)||0    // conservar el día de pago (recordatorio)
   };
   if(out.modo==="valor" && !out.valor && r.pct) out.valor = Math.round(ingreso*(Number(r.pct)||0)/100);
   return out;
@@ -2582,6 +2583,7 @@ function toggleGastoFijo(nombreRubro){
 }
 
 function renderGastos(){
+  if(typeof renderTopbar==="function") renderTopbar();  // refresca "Has pagado" al instante
   fillRubroSelects();
   fillMesAnioSelects();
   if(ccSyncFiltroPendiente){ sincronizarFiltrosGastos(); ccSyncFiltroPendiente = false; }
@@ -2701,18 +2703,42 @@ function renderResumen(){
   const anioF = document.getElementById("filtroAnio").value || "Todos";
   const mesF = document.getElementById("filtroMes").value || "Todos";
   const anio = anioF==="Todos" ? "Todos" : parseInt(anioF);
-  const rows = state.rubros.slice().sort((a,b)=>a.prioridad-b.prioridad).map(r=>{
+
+  // Calcular datos y ORDEN de cada rubro:
+  // 1=Sobregasto (arriba)  2=Alerta  3=OK con gasto  4=Sin gastar/en cero (abajo)
+  const datos = state.rubros.map(r=>{
     const presu = montoRubro(r);
     const real = realPorRubro(r.nombre, mesF, anio);
     const dif = presu-real;
-    const estado = real>presu ? '<span class="status-pill bad">Sobregasto</span>'
-      : (presu>0 && real/presu>=0.9 ? '<span class="status-pill warn">Alerta</span>' : '<span class="status-pill ok">OK</span>');
+    let orden, estado;
+    if(real>presu && presu>0){
+      orden = 1; estado = '<span class="status-pill bad">Sobregasto</span>';
+    } else if(real>presu && presu===0){
+      // gastó en un rubro sin presupuesto: también es sobregasto
+      orden = 1; estado = '<span class="status-pill bad">Sobregasto</span>';
+    } else if(presu>0 && real/presu>=0.9){
+      orden = 2; estado = '<span class="status-pill warn">Alerta</span>';
+    } else if(real>0){
+      orden = 3; estado = '<span class="status-pill ok">OK</span>';       // OK con gasto registrado
+    } else {
+      orden = 4; estado = '<span class="status-pill ok">OK</span>';       // sin gastar / en cero
+    }
+    return { r, presu, real, dif, orden, estado };
+  });
+
+  // Ordenar: por urgencia (orden), y dentro de cada grupo por prioridad del rubro
+  datos.sort((a,b)=>{
+    if(a.orden !== b.orden) return a.orden - b.orden;
+    return (a.r.prioridad||99) - (b.r.prioridad||99);
+  });
+
+  const rows = datos.map(d=>{
     return `<div class="resumen-row">
-      <div class="resumen-row-top"><span class="rr-nombre">${esc(r.nombre)}</span>${estado}</div>
+      <div class="resumen-row-top"><span class="rr-nombre">${esc(d.r.nombre)}</span>${d.estado}</div>
       <div class="resumen-row-nums">
-        <span>Presu. <b>${money(presu)}</b></span>
-        <span>Real <b>${money(real)}</b></span>
-        <span style="color:${dif<0?"var(--red)":"var(--brand-dark)"}">Dif. <b>${money(dif)}</b></span>
+        <span>Presu. <b>${money(d.presu)}</b></span>
+        <span>Real <b>${money(d.real)}</b></span>
+        <span style="color:${d.dif<0?"var(--red)":"var(--brand-dark)"}">Dif. <b>${money(d.dif)}</b></span>
       </div>
     </div>`;
   }).join("");
@@ -4018,7 +4044,7 @@ const CONFIG = {
   apiVersion: "https://api.github.com/repos/Yes0702/cuentasclaras/releases/latest",
   urlVersion: "https://github.com/Yes0702/cuentasclaras/releases/latest/download/version.json"
 };
-const APP_VERSION = "8.8";
+const APP_VERSION = "9.1";
 
 /* =====================================================================
    AVISO DE ACTUALIZACIÓN (revisa al abrir la app)
