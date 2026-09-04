@@ -862,6 +862,37 @@
       <h2 class="section-title">Tus metas<div class="rule"></div></h2>
       <div id="metasList"></div>
 
+      <h2 class="section-title">Inversiones<div class="rule"></div></h2>
+      <div class="card">
+        <div style="font-weight:700; font-size:14.5px; color:var(--brand-dark); margin-bottom:10px;">📈 ¿Y si quieres invertir en un CDT, fondo o acciones?</div>
+        <label>Monto a invertir</label>
+        <input type="text" inputmode="numeric" id="invMonto" class="mono-input" placeholder="0" style="margin-bottom:10px;" oninput="calcularInversion()">
+        <label>Tasa E.A. que te ofrece la entidad</label>
+        <input type="text" inputmode="decimal" id="invTasa" class="mono-input" placeholder="Ej: 11" style="margin-bottom:10px;" oninput="calcularInversion()">
+        <label>Plazo de la inversión</label>
+        <select id="invPlazo" class="mono-input" style="margin-bottom:12px;" onchange="calcularInversion()">
+          <option value="30">30 días</option>
+          <option value="90" selected>90 días</option>
+          <option value="180">180 días</option>
+          <option value="365">365 días</option>
+          <option value="720">720 días</option>
+        </select>
+        <label style="margin-bottom:6px; display:block;">Ver rendimiento por</label>
+        <div style="display:flex; gap:8px; margin-bottom:12px;">
+          <button type="button" id="invModoDia" class="btn-modo-abono activo" onclick="ccSetModoInversion('dia')" style="flex:1;">Día</button>
+          <button type="button" id="invModoMes" class="btn-modo-abono" onclick="ccSetModoInversion('mes')" style="flex:1;">Mes</button>
+          <button type="button" id="invModoAnio" class="btn-modo-abono" onclick="ccSetModoInversion('anio')" style="flex:1;">Año</button>
+        </div>
+        <div style="background:var(--surface-2); border-radius:12px; padding:12px 14px;">
+          <div style="display:flex; justify-content:space-between; align-items:baseline; gap:8px; font-size:13px; margin-bottom:6px;"><span class="hint" style="white-space:nowrap;">Rendimiento bruto</span><b id="invBruto" style="text-align:right;">—</b></div>
+          <div style="display:flex; justify-content:space-between; align-items:baseline; gap:8px; font-size:13px; margin-bottom:6px;"><span class="hint" style="white-space:nowrap;">Retención en la fuente (4%)</span><b style="color:#C9701F; text-align:right;" id="invRetencion">—</b></div>
+          <div style="display:flex; justify-content:space-between; align-items:baseline; gap:8px; font-size:13px; margin-bottom:8px; border-top:1px dashed var(--line); padding-top:8px;"><span class="hint" style="white-space:nowrap;">Rendimiento neto</span><b style="color:var(--brand-dark); text-align:right;" id="invNeto">—</b></div>
+          <div style="display:flex; flex-direction:column; gap:2px;"><span style="font-weight:700; font-size:13px;">Total a recibir</span><b id="invTotal" style="font-size:16px; word-break:break-word;">—</b></div>
+          <div style="display:flex; justify-content:space-between; align-items:baseline; gap:8px; font-size:12.5px; margin-top:10px; border-top:1px dashed var(--line); padding-top:8px;"><span class="hint" style="white-space:nowrap;">4x1000 estimado (informativo)</span><b style="color:var(--ink-mute); text-align:right;" id="inv4x1000">—</b></div>
+        </div>
+        <div class="hint" style="margin-top:10px; line-height:1.5;">📌 El 4x1000 no está incluido arriba: solo aplicaría si al retirar todo superas $18.330.900 en el mes desde una cuenta no exenta. Te mostramos cuánto sería, solo para que lo tengas presente.</div>
+      </div>
+
       <h2 class="section-title">Historial del fondo de emergencia<div class="rule"></div></h2>
       <div id="feHistorialList"></div>
     </section>
@@ -1216,14 +1247,24 @@ function toast(msg){
   t._tid = setTimeout(()=>t.classList.remove("show"), 2600);
 }
 
-/* ---- Formato de miles en vivo para campos de dinero ($ 1.234.567) ---- */
+/* ---- Formato de miles (y decimales opcionales) en vivo para campos de dinero
+   ($ 1.234.567 o $ 1.234.567,89). El punto separa miles, la coma es el decimal
+   (formato es-CO), igual que México/Perú/Ecuador/Chile lo entienden con coma decimal. ---- */
 function maskMiles(el){
   if(!el || el.dataset.maskMiles) return;
   el.dataset.maskMiles = "1";
-  el.setAttribute("inputmode","numeric");
+  el.setAttribute("inputmode","decimal");
   el.addEventListener("input", function(){
-    const digits = this.value.replace(/\D/g,"");
-    this.value = digits ? Number(digits).toLocaleString("es-CO") : "";
+    let v = this.value.replace(/[^\d,]/g,"");           // solo dígitos y una coma decimal
+    const partes = v.split(",");
+    let entero = partes[0].replace(/^0+(?=\d)/,"");
+    entero = entero ? Number(entero).toLocaleString("es-CO") : "";
+    if(partes.length > 1){
+      const decimal = partes.slice(1).join("").slice(0,2);  // máx. 2 decimales
+      this.value = entero + "," + decimal;
+    } else {
+      this.value = entero;
+    }
   });
 }
 function unmaskMiles(el){
@@ -1232,13 +1273,14 @@ function unmaskMiles(el){
 function numFromMasked(idOrEl){
   const el = typeof idOrEl==="string" ? document.getElementById(idOrEl) : idOrEl;
   if(!el) return 0;
-  return parseInt(String(el.value).replace(/\D/g,""),10) || 0;
+  const limpio = String(el.value).replace(/\./g,"").replace(",",".");
+  return parseFloat(limpio) || 0;
 }
 function setMasked(idOrEl, val){
   const el = typeof idOrEl==="string" ? document.getElementById(idOrEl) : idOrEl;
   if(!el) return;
-  const n = Math.round(Number(val)||0);
-  el.value = n ? n.toLocaleString("es-CO") : "";
+  const n = Math.round((Number(val)||0)*100)/100;   // hasta 2 decimales
+  el.value = n ? n.toLocaleString("es-CO", {maximumFractionDigits:2}) : "";
 }
 
 /* ---- Confirmación de dos toques (reemplaza confirm()/prompt(), que no funcionan en muchos WebView de APK) ---- */
@@ -3269,11 +3311,26 @@ function ccAhorroAbono(d, abono, modo){
   if(i<=0 || cuota<=0 || abono<=0 || abono>=saldo){
     return { ahorro:0, detalle:"", nuevaCuota:cuota };
   }
-  const intOrig = ccInteresTotal(saldo, cuota, i);
   const nuevoSaldo = saldo - abono;
+  const nOrig = ccMesesReal(saldo, cuota, i);
+  if(!isFinite(nOrig)){
+    // La cuota actual no alcanza a cubrir el interés mensual: la deuda no baja (o crece) tal como está.
+    const nNuevoConAbono = ccMesesReal(nuevoSaldo, cuota, i);
+    if(isFinite(nNuevoConAbono)){
+      return {
+        ahorro: 0,
+        nuevaCuota: cuota,
+        detalle: `⚠️ Con tu cuota actual esta deuda no bajaba (el interés mensual, ~${money(Math.round(saldo*i))}, era mayor que tu pago). Con este abono sí alcanzaría a cubrirlo: terminarías en aprox. ${Math.round(nNuevoConAbono)} meses.`
+      };
+    }
+    return {
+      ahorro: 0,
+      nuevaCuota: cuota,
+      detalle: `⚠️ Tu cuota actual (${money(cuota)}) no alcanza a cubrir el interés mensual (~${money(Math.round(saldo*i))}). Con esta cuota la deuda no baja — para que empiece a bajar, sube el pago mensual o abona más a capital.`
+    };
+  }
+  const intOrig = ccInteresTotal(saldo, cuota, i);
   if(modo==="cuota"){
-    const nOrig = ccMesesReal(saldo, cuota, i);
-    if(!isFinite(nOrig)) return { ahorro:0, detalle:"", nuevaCuota:cuota };
     const cuotaNueva = (nuevoSaldo * i) / (1 - Math.pow(1+i, -nOrig));
     const intNuevo = Math.max(0, (cuotaNueva * nOrig) - nuevoSaldo);
     return {
@@ -3283,9 +3340,8 @@ function ccAhorroAbono(d, abono, modo){
     };
   } else {
     const intNuevo = ccInteresTotal(nuevoSaldo, cuota, i);
-    const nOrig = ccMesesReal(saldo, cuota, i);
     const nNuevo = ccMesesReal(nuevoSaldo, cuota, i);
-    const mesesMenos = (isFinite(nOrig)&&isFinite(nNuevo)) ? Math.round(nOrig-nNuevo) : 0;
+    const mesesMenos = isFinite(nNuevo) ? Math.round(nOrig-nNuevo) : 0;
     return {
       ahorro: Math.max(0, Math.round(intOrig - intNuevo)),
       nuevaCuota: cuota,
@@ -3294,7 +3350,89 @@ function ccAhorroAbono(d, abono, modo){
   }
 }
 
+/* Simulador de ABONO MENSUAL EXTRA (recurrente, no único).
+   Muestra en cuánto terminarías y cuánto ahorrarías si desde ahora
+   pagas tu cuota normal + un extra fijo, todos los meses. */
+function ccPreviewAbonoMensual(id){
+  const d = state.deudas.find(x=>x.id===id);
+  const el = document.getElementById("abonoMensualPreview_"+id);
+  if(!d || !el) return;
+  const extra = numFromMasked("abonoMensualInput_"+id);
+  const cuota = d.pago||0;
+  const saldo = d.saldo||0;
+  if(!extra || extra<=0){
+    el.innerHTML = "Escribe un monto para ver cuánto ahorrarías pagándolo cada mes.";
+    return;
+  }
+  if(cuota<=0 || saldo<=0){
+    el.innerHTML = "";
+    return;
+  }
+  const i = (d.tasaAnual||0)/100/12;
+  const nOrig = ccMesesReal(saldo, cuota, i);
+  const nNuevo = ccMesesReal(saldo, cuota+extra, i);
+  if(!isFinite(nNuevo)){
+    el.innerHTML = `⚠️ Con ${money(cuota+extra)} al mes (cuota + extra) todavía no cubres el interés mensual de esta deuda (~${money(Math.round(saldo*i))}). Necesitas un extra mayor para que empiece a bajar.`;
+    return;
+  }
+  const fechaFin = fechaEnMeses(Math.round(nNuevo));
+  if(!isFinite(nOrig)){
+    // Con la cuota de hoy la deuda no bajaba; el extra es lo que la hace bajar.
+    el.innerHTML = `⚠️ Con tu cuota actual esta deuda no bajaba (el interés mensual, ~${money(Math.round(saldo*i))}, era mayor que tu pago). Pagando ${money(extra)} extra cada mes (cuota total ${money(cuota+extra)}), sí empezaría a bajar: terminarías en <b>${fechaFin}</b>.`;
+    return;
+  }
+  const mesesMenos = Math.max(0, Math.round(nOrig - nNuevo));
+  let texto = `Pagando ${money(extra)} extra cada mes (cuota total ${money(cuota+extra)}), terminarías en <b>${fechaFin}</b>`;
+  texto += mesesMenos>0 ? `, <b>${mesesMenos} mes${mesesMenos===1?"":"es"} antes</b> de lo previsto.` : ".";
+  if(d.tasaAnual>0){
+    const intOrig = ccInteresTotal(saldo, cuota, i);
+    const intNuevo = ccInteresTotal(saldo, cuota+extra, i);
+    const ahorro = Math.max(0, Math.round(intOrig - intNuevo));
+    texto += ` Ahorro total estimado en intereses de toda la deuda: <b>${money(ahorro)}</b> (aprox.).`;
+  }
+  el.innerHTML = texto;
+}
+
 let ccModoAbono = {};  // guarda el modo elegido por deuda: "tiempo" o "cuota"
+
+/* ===== Simulador de inversiones (CDT, fondo, acciones) — Ahorros ===== */
+let invModoVista = "dia";
+function ccSetModoInversion(modo){
+  invModoVista = modo;
+  ["Dia","Mes","Anio"].forEach(m=>{
+    const el = document.getElementById("invModo"+m);
+    if(el) el.classList.toggle("activo", m.toLowerCase()===modo);
+  });
+  calcularInversion();
+}
+function calcularInversion(){
+  const bEl = document.getElementById("invBruto");
+  if(!bEl) return; // la sección aún no está en el DOM (otra pestaña)
+  const monto = numFromMasked("invMonto");
+  const tasa = parseFloat((document.getElementById("invTasa").value||"").replace(",","."))||0;
+  const dias = parseInt(document.getElementById("invPlazo").value,10)||0;
+  if(monto<=0 || tasa<=0 || dias<=0){
+    ["invBruto","invRetencion","invNeto"].forEach(id=>document.getElementById(id).textContent="—");
+    document.getElementById("invTotal").textContent = "—";
+    document.getElementById("inv4x1000").textContent = "—";
+    return;
+  }
+  const i = tasa/100;
+  const bruto = monto*(Math.pow(1+i, dias/365)-1);
+  const retencion = bruto*0.04;
+  const neto = bruto-retencion;
+  const total = monto+neto;
+  const cuatroPorMil = total*0.004;   // 4x1000: solo informativo, no se resta del total
+  let brutoM, netoM, retM, etiqueta;
+  if(invModoVista==="dia"){ brutoM=bruto/dias; netoM=neto/dias; retM=retencion/dias; etiqueta=" / día"; }
+  else if(invModoVista==="mes"){ brutoM=bruto/(dias/30); netoM=neto/(dias/30); retM=retencion/(dias/30); etiqueta=" / mes"; }
+  else { brutoM=bruto/(dias/365); netoM=neto/(dias/365); retM=retencion/(dias/365); etiqueta=" / año"; }
+  document.getElementById("invBruto").textContent = money(brutoM)+etiqueta;
+  document.getElementById("invRetencion").textContent = "-"+money(retM)+etiqueta;
+  document.getElementById("invNeto").textContent = money(netoM)+etiqueta;
+  document.getElementById("invTotal").textContent = money(total)+" al vencimiento";
+  document.getElementById("inv4x1000").textContent = "-"+money(cuatroPorMil)+" si aplica";
+}
 function ccSetModoAbono(id, modo){
   ccModoAbono[id] = modo;
   const bT = document.getElementById("modoTiempo_"+id);
@@ -3324,7 +3462,7 @@ function ccPreviewAbono(id){
   }
   const modo = ccModoAbono[id] || "tiempo";
   const r = ccAhorroAbono(d, monto, modo);
-  el.innerHTML = `Nuevo saldo: <b>${money(d.saldo-monto)}</b>. ${r.detalle} Ahorro estimado en intereses: <b>${money(r.ahorro)}</b> (aprox.).`;
+  el.innerHTML = `Nuevo saldo: <b>${money(d.saldo-monto)}</b>. ${r.detalle} Ahorro total estimado en intereses de toda la deuda: <b>${money(r.ahorro)}</b> (aprox.).`;
   el.style.color = "";
 }
 
@@ -3350,7 +3488,7 @@ function pedirConfirmarAbonoCapital(id){
         Todo el dinero baja tu deuda, sin pagar interés por este abono.
       </div>
       ${d.tasaAnual>0 ? `<div style="font-size:12.5px; color:var(--ink-soft); line-height:1.5; margin-bottom:16px; padding:10px; background:var(--brand-soft); border-radius:10px;">
-        ${r.detalle}<br>Ahorro estimado en intereses: <b style="color:var(--brand-dark);">${money(r.ahorro)}</b> (aprox.).
+        ${r.detalle}<br>Ahorro total estimado en intereses de toda la deuda: <b style="color:var(--brand-dark);">${money(r.ahorro)}</b> (aprox.).
       </div>` : `<div style="margin-bottom:16px;"></div>`}
       <div style="display:flex; gap:10px;">
         <button onclick="ccCerrarModalAbono()" style="flex:1; background:#EEF1F3; color:var(--ink); border:none; border-radius:12px; padding:13px; font-weight:700; cursor:pointer;">Cancelar</button>
@@ -3477,14 +3615,18 @@ function renderDeudas(){
         </div>
       </div>`;
     }
-    const meses = d.pago>0 ? Math.ceil(d.saldo/d.pago) : "—";
+    const iMensual = (d.tasaAnual||0)/100/12;
+    const nRealMeses = (d.pago>0) ? ccMesesReal(d.saldo, d.pago, iMensual) : NaN;
+    const mesesTexto = d.pago<=0 ? "—"
+      : !isFinite(nRealMeses) ? "⚠️ no baja con esta cuota"
+      : `${Math.ceil(nRealMeses)} meses restantes`;
     const pctPagado = d.inicial>0 ? Math.min(100, (1-d.saldo/d.inicial)*100) : 0;
     const barClass = pctPagado>=66 ? "debt-high" : (pctPagado>=33 ? "debt-mid" : "debt-low");
     return `<div class="card" onclick="openDeudaEdit('${d.id}')">
       <div style="display:flex; justify-content:space-between; align-items:flex-start;">
         <div>
           <div style="font-weight:700; font-size:14.5px;">${esc(d.nombre)}</div>
-          <div class="hint" style="margin-top:2px;">Pago mensual ${money(d.pago)} · ${meses} meses restantes${d.fecha ? ` · meta: ${d.fecha}` : ""}</div>
+          <div class="hint" style="margin-top:2px;">Pago mensual ${money(d.pago)} · ${mesesTexto}${d.fecha ? ` · meta: ${d.fecha}` : ""}</div>
         </div>
         ${esPendiente("deuda:"+d.id)
           ? `<button class="r-del confirm" onclick="event.stopPropagation(); deleteDeuda('${d.id}')">✓ Eliminar</button>`
@@ -3512,6 +3654,12 @@ function renderDeudas(){
              </div>
              <div class="hint" style="margin-bottom:6px; font-size:11px;">Reducir tiempo: terminas antes (ahorras más). Reducir cuota: pagas menos cada mes.</div>
              <div class="hint" id="abonoPreview_${d.id}" style="margin-bottom:8px;">Escribe el monto para ver tu ahorro.</div>` : `<div class="hint" id="abonoPreview_${d.id}" style="margin-bottom:8px;"></div>`}
+             <div style="margin-top:14px; padding-top:12px; border-top:1px dashed var(--line);">
+               <div style="font-size:12.5px; font-weight:700; color:var(--brand-dark); margin-bottom:8px;">📅 ¿Y si pagas un extra cada mes?</div>
+               <label style="font-size:11.5px;">Abono extra mensual (todos los meses)</label>
+               <input type="text" inputmode="numeric" id="abonoMensualInput_${d.id}" class="mono-input" placeholder="0" style="margin-bottom:8px;" onclick="event.stopPropagation();" oninput="event.stopPropagation(); ccPreviewAbonoMensual('${d.id}')">
+               <div class="hint" id="abonoMensualPreview_${d.id}" style="margin-bottom:4px;">Escribe un monto para ver cuánto ahorrarías pagándolo cada mes.</div>
+             </div>
              <div class="edit-actions">
                <button class="btn-primary" style="margin:0;" onclick="event.stopPropagation(); pedirConfirmarAbonoCapital('${d.id}')">Abonar a capital</button>
                <button class="btn-ghost" style="margin:0;" onclick="event.stopPropagation(); abonandoDeudaId=null; ccModoAbono={}; renderDeudas();">Cancelar</button>
@@ -3529,6 +3677,8 @@ function renderDeudas(){
   if(abonandoDeudaId){
     const el = document.getElementById("abonoDeudaInput_"+abonandoDeudaId);
     if(el) maskMiles(el);
+    const elM = document.getElementById("abonoMensualInput_"+abonandoDeudaId);
+    if(elM) maskMiles(elM);
   }
 }
 
@@ -4035,6 +4185,7 @@ const CONFIG = {
   nequi:   "",                  // Nequi desactivado (solo Bre-B)
   breb:    "@yesids259",        // tu llave Bre-B (alfanumérica, celular o cédula)
   pseUrl:  "",                  // link de pago (Wompi/ePayco). Vacío = oculto.
+  paypalUrl: "https://www.paypal.me/Yes0702",  // link para aportes desde fuera de Colombia.
 
   mostrarDonacion: true,        // pon false para esconder todo el bloque
 
@@ -4044,7 +4195,7 @@ const CONFIG = {
   apiVersion: "https://api.github.com/repos/Yes0702/cuentasclaras/releases/latest",
   urlVersion: "https://github.com/Yes0702/cuentasclaras/releases/latest/download/version.json"
 };
-const APP_VERSION = "9.1";
+const APP_VERSION = "9.4";
 
 /* =====================================================================
    AVISO DE ACTUALIZACIÓN (revisa al abrir la app)
@@ -4311,7 +4462,7 @@ function renderSeguridad(){
 function renderDonacion(){
   const cont = document.getElementById("bloqueDonacion");
   if(!cont) return;
-  const hayAlgo = CONFIG.nequi || CONFIG.breb || CONFIG.pseUrl;
+  const hayAlgo = CONFIG.nequi || CONFIG.breb || CONFIG.pseUrl || CONFIG.paypalUrl;
   if(!CONFIG.mostrarDonacion || !hayAlgo){ cont.innerHTML = ""; return; }
 
   // Fila genérica (para Nequi u otros medios de texto)
@@ -4340,6 +4491,20 @@ function renderDonacion(){
       </div>
     </div>` : "";
 
+  // Bloque de PayPal: para quien aporte desde fuera de Colombia (México, Perú, Ecuador, Chile, etc.)
+  const bloquePaypal = CONFIG.paypalUrl ? `
+    <div style="padding:${CONFIG.breb ? "14px" : "6px"} 0 2px; ${CONFIG.breb ? "border-top:1px solid var(--line-soft); margin-top:12px;" : ""}">
+      <div style="display:flex; align-items:center; gap:8px; margin-bottom:12px;">
+        <span style="font-size:20px;">🌐</span>
+        <span class="s-txt" style="font-weight:700;">PayPal</span>
+        <span style="font-weight:500; color:var(--ink-soft); font-size:11.5px;">· desde cualquier país</span>
+      </div>
+      <button class="btn-primary" style="width:100%; margin:0;" onclick="abrirExterno('${esc(CONFIG.paypalUrl)}')">Aportar por PayPal</button>
+      <div class="hint" style="margin-top:10px; text-align:center;">
+        La opción para aportar <b>fuera de Colombia</b>: México, Perú, Ecuador, Chile y el resto del mundo.
+      </div>
+    </div>` : "";
+
   cont.innerHTML = `
     <h2 class="section-title">Apoya la app<div class="rule"></div></h2>
     <div class="card">
@@ -4350,6 +4515,7 @@ function renderDonacion(){
       </div>
       ${CONFIG.nequi ? fila("Nequi", CONFIG.nequi, "gratis") : ""}
       ${bloqueBreb}
+      ${bloquePaypal}
       ${CONFIG.pseUrl ? `<button class="btn-ghost" style="width:100%;margin-top:12px;" onclick="abrirExterno('${esc(CONFIG.pseUrl)}')">Pagar con PSE / tarjeta</button>` : ""}
     </div>`;
 }
@@ -5054,7 +5220,7 @@ function renderAll(){
 
 document.getElementById("gFecha").value = new Date().toISOString().slice(0,10);
 document.getElementById("feAporteFechaNueva").value = new Date().toISOString().slice(0,10);
-["gMonto","dInicial","dSaldo","dPago","feAhorrado","feAporte","feAporteMontoNuevo","mObjetivo","mAhorrado","newIngresoMonto"].forEach(id=>{
+["gMonto","dInicial","dSaldo","dPago","feAhorrado","feAporte","feAporteMontoNuevo","mObjetivo","mAhorrado","newIngresoMonto","invMonto"].forEach(id=>{
   const el = document.getElementById(id);
   if(el) maskMiles(el);
 });
