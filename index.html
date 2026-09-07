@@ -134,10 +134,16 @@
   h2.section-title:first-child{margin-top:0;}
   h2.section-title .rule{flex:1; height:1px; background:var(--line);}
   h2.section-title.plegable{cursor:pointer; user-select:none; -webkit-user-select:none;}
-  h2.section-title.plegable .chevron{width:15px; height:15px; flex-shrink:0; transition:transform .2s ease; stroke:var(--ink-mute);}
+  h2.section-title.plegable .chevron{width:22px; height:22px; flex-shrink:0; transition:transform .2s ease; stroke:var(--ink-mute); stroke-width:3;}
   .plegable-caja{display:none;}
   .plegable-caja.abierta{display:block; animation:fade .18s ease;}
   h2.section-title.plegable[aria-expanded="true"] .chevron{transform:rotate(180deg);}
+  h2.section-title.destacado{
+    background:linear-gradient(135deg, var(--brand), var(--brand-dark)); color:#fff;
+    padding:12px 14px; border-radius:12px; margin-top:20px; box-shadow:0 4px 14px rgba(11,125,92,.22);
+  }
+  h2.section-title.destacado .rule{background:rgba(255,255,255,.35);}
+  h2.section-title.destacado .chevron{stroke:#fff;}
 
   .hint{font-size:13px; color:var(--ink-soft); line-height:1.5; font-weight:500;}
 
@@ -484,13 +490,19 @@
   <div style="background:#fff; border-radius:20px; padding:26px 24px; max-width:340px; width:100%; text-align:center; box-shadow:0 20px 50px rgba(0,0,0,.3);">
     <div style="font-size:44px; margin-bottom:10px;">💬</div>
     <div style="font-size:18px; font-weight:800; color:var(--brand-dark); margin-bottom:10px;">¿Tienes dudas?</div>
-    <div style="font-size:13.5px; color:var(--ink); line-height:1.55; margin-bottom:20px;">
+    <div style="font-size:13.5px; color:var(--ink); line-height:1.55; margin-bottom:16px;">
       Si tienes dudas puedes escribirnos al WhatsApp, con gusto te ayudamos.
     </div>
-    <div style="display:flex; flex-direction:column; gap:10px;">
-      <button onclick="ccAyudaNecesito()" style="background:var(--brand-dark); color:#fff; border:none; border-radius:12px; padding:13px; font-weight:800; cursor:pointer;">Necesito ayuda</button>
-      <button onclick="ccAyudaDespues()" style="background:#EEF1F3; color:var(--ink); border:none; border-radius:12px; padding:13px; font-weight:700; cursor:pointer;">Después</button>
+    <button onclick="ccAyudaNecesito()" style="width:100%; background:var(--brand-dark); color:#fff; border:none; border-radius:12px; padding:13px; font-weight:800; cursor:pointer;">Necesito ayuda</button>
+
+    <div style="border-top:1px dashed var(--line); margin:18px 0 16px;"></div>
+
+    <div style="font-size:13.5px; color:var(--ink); line-height:1.55; margin-bottom:14px;">
+      ☁️ Tus datos no están en la nube, recuerda guardar un respaldo periódicamente.
     </div>
+    <button onclick="ccAyudaGuardar()" style="width:100%; background:#fff; color:var(--brand-dark); border:1.5px solid var(--brand-dark); border-radius:12px; padding:12px; font-weight:800; cursor:pointer;">Guardar</button>
+
+    <button onclick="ccAyudaDespues()" style="width:100%; margin-top:16px; background:#EEF1F3; color:var(--ink); border:none; border-radius:12px; padding:13px; font-weight:700; cursor:pointer;">Después</button>
   </div>
 </div>
 
@@ -545,10 +557,10 @@
       </div>
 
       <div class="kpi-grid">
-        <div class="kpi"><div class="k-label">Presupuestado</div><div class="k-value" id="kpiPresu">$0</div></div>
-        <div class="kpi"><div class="k-label">Gastado (mes)</div><div class="k-value" id="kpiReal">$0</div></div>
+        <div class="kpi" style="cursor:pointer;" onclick="showView('presupuesto')"><div class="k-label">Presupuestado</div><div class="k-value" id="kpiPresu">$0</div></div>
+        <div class="kpi" style="cursor:pointer;" onclick="ccIrAGastadoResumen()"><div class="k-label">Gastado (mes)</div><div class="k-value" id="kpiReal">$0</div></div>
         <div class="kpi pos" id="kpiRestanteBox"><div class="k-label">Restante</div><div class="k-value" id="kpiRestante">$0</div></div>
-        <div class="kpi orange"><div class="k-label">Deuda pendiente</div><div class="k-value" id="kpiDeuda">$0</div></div>
+        <div class="kpi orange" style="cursor:pointer;" onclick="ccIrAPagoDeudas()"><div class="k-label">Deuda pendiente</div><div class="k-value" id="kpiDeuda">$0</div></div>
       </div>
 
       <h2 class="section-title">Comparativo mes a mes<div class="rule"></div></h2>
@@ -728,7 +740,7 @@
       </div>
 
       <div class="card" style="margin-top:12px; background:linear-gradient(135deg,#FBE8D3,#F5D9BE); border:1px solid #E9C9A3;">
-        <div class="grupo-ing-head" onclick="toggleVerPagoDeudas()" style="cursor:pointer;">
+        <div class="grupo-ing-head" id="pagoDeudasHead" onclick="toggleVerPagoDeudas()" style="cursor:pointer;">
           <div>
             <div class="s-txt" style="color:#7A4A18;">💳 Registrar pago de deudas</div>
             <div class="s-sub" style="color:#9A6B33;">👆 Toca aquí para registrar cuánto pagaste</div>
@@ -757,7 +769,7 @@
       </div>
       <div id="gastosList"></div>
 
-      <div onclick="toggleResumen()" style="cursor:pointer; margin-top:4px; padding:15px 16px; background:linear-gradient(135deg,#13B183,#0B7D5C); border-radius:14px; display:flex; justify-content:space-between; align-items:center; box-shadow:0 4px 14px rgba(11,125,92,.25);">
+      <div onclick="toggleResumen()" id="resumenHead" style="cursor:pointer; margin-top:4px; padding:15px 16px; background:linear-gradient(135deg,#13B183,#0B7D5C); border-radius:14px; display:flex; justify-content:space-between; align-items:center; box-shadow:0 4px 14px rgba(11,125,92,.25);">
         <div>
           <div style="color:#fff; font-size:14.5px; font-weight:800;">📊 Presupuestado vs. real por rubro</div>
           <div style="color:rgba(255,255,255,.9); font-size:12px; margin-top:2px;">Toca para ver cuánto planeaste y cuánto gastaste</div>
@@ -880,10 +892,10 @@
         <button class="btn-primary" onclick="addMeta()">Agregar meta</button>
       </div>
 
-      <h2 class="section-title">Tus metas<div class="rule"></div></h2>
+      <h2 class="section-title destacado">Tus metas<div class="rule"></div></h2>
       <div id="metasList"></div>
 
-      <h2 class="section-title plegable" id="secInversiones_titulo" role="button" tabindex="0" aria-expanded="false" onclick="ccTogglePlegable('secInversiones')" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();ccTogglePlegable('secInversiones');}">Inversiones<div class="rule"></div><svg class="chevron" viewBox="0 0 24 24" fill="none" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg></h2>
+      <h2 class="section-title plegable destacado" id="secInversiones_titulo" role="button" tabindex="0" aria-expanded="false" onclick="ccTogglePlegable('secInversiones')" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();ccTogglePlegable('secInversiones');}"><svg class="chevron" viewBox="0 0 24 24" fill="none" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>Inversiones<div class="rule"></div></h2>
       <div class="plegable-caja" id="secInversiones">
       <div class="card">
         <div style="font-weight:700; font-size:14.5px; color:var(--brand-dark); margin-bottom:10px;">📈 ¿Y si quieres invertir en un CDT, fondo o acciones?</div>
@@ -916,7 +928,7 @@
       </div>
       </div>
 
-      <h2 class="section-title plegable" id="sec4x1000_titulo" role="button" tabindex="0" aria-expanded="false" onclick="ccTogglePlegable('sec4x1000')" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();ccTogglePlegable('sec4x1000');}">Calculadora 4x1000<div class="rule"></div><svg class="chevron" viewBox="0 0 24 24" fill="none" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg></h2>
+      <h2 class="section-title plegable destacado" id="sec4x1000_titulo" role="button" tabindex="0" aria-expanded="false" onclick="ccTogglePlegable('sec4x1000')" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();ccTogglePlegable('sec4x1000');}"><svg class="chevron" viewBox="0 0 24 24" fill="none" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>Calculadora 4x1000<div class="rule"></div></h2>
       <div class="plegable-caja" id="sec4x1000">
       <div class="card">
         <label>Ingresa el valor al que quieres calcular el 4x1000</label>
@@ -1000,7 +1012,7 @@
           <button class="btn-ghost" onclick="exportGastosCSV()">CSV de gastos</button>
           <button class="btn-ghost" onclick="exportResumenCSV()">CSV resumen</button>
         </div>
-        <div style="margin-top:14px; padding:12px; background:var(--brand-soft); border:1px solid #BFE9DA; border-radius:11px;">
+        <div id="secRespaldoAjustes" style="margin-top:14px; padding:12px; background:var(--brand-soft); border:1px solid #BFE9DA; border-radius:11px;">
           <div class="hint" style="color:var(--brand-dark); font-weight:600; margin-bottom:8px;">💾 Respaldo de todos tus datos</div>
           <button class="btn-primary" style="margin-top:0;" onclick="exportBackupJSON()">⬇ Descargar respaldo (guardar)</button>
           <button class="btn-outline" style="width:100%; margin-top:8px;" onclick="document.getElementById('importJsonFileAj').click()">⬆ Importar respaldo (restaurar)</button>
@@ -2173,7 +2185,7 @@ function renderPresupuesto(){
             <div class="dp-edita">✎ Edítala en la pestaña Deudas</div>
           </div>
           <div class="dp-monto">${money(d.pago||0)}<span>/mes</span></div>`;
-        card.onclick = ()=> showView("deudas");
+        card.onclick = ()=> ccIrADeuda(d.id);
         box.appendChild(card);
       });
     }
@@ -2935,9 +2947,9 @@ function importGastosCSV(evt){
   evt.target.value = "";
 }
 
-function exportBackupJSON(){
+async function exportBackupJSON(){
   const hoy = new Date().toISOString().slice(0,10); // 2026-08-27
-  downloadFile("cuentas_claras_respaldo_"+hoy+".json", JSON.stringify(state, null, 2), "application/json");
+  await downloadFile("cuentas_claras_respaldo_"+hoy+".json", JSON.stringify(state, null, 2), "application/json");
   marcarRespaldoHecho();
   renderUltimoRespaldo();
 }
@@ -3670,7 +3682,7 @@ function renderDeudas(){
   }
   box.innerHTML = state.deudas.map(d=>{
     if(editingDeudaId === d.id){
-      return `<div class="edit-panel">
+      return `<div class="edit-panel" id="deudaCard_${d.id}">
         <label>Nombre</label>
         <input type="text" id="edN_${d.id}" value="${esc(d.nombre)}">
         <div class="field-row">
@@ -3707,7 +3719,7 @@ function renderDeudas(){
       : `${Math.ceil(nRealMeses)} meses restantes`;
     const pctPagado = d.inicial>0 ? Math.min(100, (1-d.saldo/d.inicial)*100) : 0;
     const barClass = pctPagado>=66 ? "debt-high" : (pctPagado>=33 ? "debt-mid" : "debt-low");
-    return `<div class="card" onclick="openDeudaEdit('${d.id}')">
+    return `<div class="card" id="deudaCard_${d.id}" onclick="openDeudaEdit('${d.id}')">
       <div style="display:flex; justify-content:space-between; align-items:flex-start;">
         <div>
           <div style="font-weight:700; font-size:14.5px;">${esc(d.nombre)}</div>
@@ -4280,7 +4292,7 @@ const CONFIG = {
   apiVersion: "https://api.github.com/repos/Yes0702/cuentasclaras/releases/latest",
   urlVersion: "https://github.com/Yes0702/cuentasclaras/releases/latest/download/version.json"
 };
-const APP_VERSION = "9.6";
+const APP_VERSION = "9.7";
 
 /* =====================================================================
    AVISO DE ACTUALIZACIÓN (revisa al abrir la app)
@@ -4398,8 +4410,15 @@ function ccDescargarActualizacion(url){
   let ultimo = 0;
   try{ ultimo = Number(localStorage.getItem(CLAVE_RESPALDO) || 0); }catch(e){}
   const dias = ultimo ? Math.floor((Date.now()-ultimo)/86400000) : 999;
+
+  // Si ya se hizo un respaldo hoy, no volver a interrumpir: ir directo a la actualización.
+  if(dias === 0){
+    abrirDescargaExterna(url);
+    return;
+  }
+
   const textoUltimo = ultimo
-    ? "Tu último respaldo fue hace "+(dias===0?"menos de un día":dias+" día"+(dias===1?"":"s"))+"."
+    ? "Tu último respaldo fue hace "+dias+" día"+(dias===1?"":"s")+"."
     : "Aún no has hecho ningún respaldo.";
 
   const overlay = document.createElement("div");
@@ -4425,13 +4444,11 @@ function ccCerrarModalRespUpd(){
   const m = document.getElementById("modalRespaldoUpdate");
   if(m) m.remove();
 }
-function ccRespaldarYActualizar(url){
-  exportBackupJSON();
-  marcarRespaldoHecho();
+async function ccRespaldarYActualizar(url){
   ccCerrarModalRespUpd();
-  // dar un momento para que el respaldo se comparta/guarde, luego abrir descarga
-  toast("Respaldo listo. Ahora se abrirá la descarga…");
-  setTimeout(()=>{ abrirDescargaExterna(url); }, 1800);
+  toast("Guarda tu respaldo. La actualización se abrirá cuando termines…");
+  await exportBackupJSON();   // espera de verdad a que el usuario elija dónde guardar/compartir
+  abrirDescargaExterna(url);
 }
 
 /* Abre el APK en el navegador del SISTEMA (Chrome), que sí tiene
@@ -5327,6 +5344,10 @@ function ccAyudaNecesito(){
     setTimeout(()=>{ abrirWhatsApp(); }, 350);
   }, 150);
 }
+function ccAyudaGuardar(){
+  ccCerrarModalAyuda();
+  ccIrARespaldo();
+}
 function ccAyudaDespues(){
   ccCerrarModalAyuda();
   toast("Si necesitas ayuda, en Configuración puedes escribirnos 💬");
@@ -5345,6 +5366,55 @@ function ccMostrarAyudaSiListo(){
   ccAyudaMostrada = true;
   const el = document.getElementById("ccAyuda");
   if(el) el.style.display = "flex";
+}
+
+/* ---- Navegación directa desde Inicio / Presupuesto hacia la sección exacta ---- */
+function ccScrollCentrado(el, cont){
+  if(!el || !cont) return;
+  const top = el.offsetTop - (cont.clientHeight/2) + (el.offsetHeight/2);
+  cont.scrollTo({ top: Math.max(0, top), behavior:"smooth" });
+}
+function ccIrADeuda(id){
+  showView("deudas");
+  openDeudaEdit(id);
+  setTimeout(()=>{
+    const el = document.getElementById("deudaCard_"+id);
+    const cont = document.getElementById("views");
+    ccScrollCentrado(el, cont);
+  }, 150);
+}
+function ccIrAGastadoResumen(){
+  showView("gastos");
+  setTimeout(()=>{
+    const box = document.getElementById("resumenBox");
+    const chev = document.getElementById("chevResumen");
+    if(box) box.style.display = "block";
+    if(chev) chev.textContent = "▴";
+    const head = document.getElementById("resumenHead");
+    const cont = document.getElementById("views");
+    ccScrollCentrado(head, cont);
+  }, 150);
+}
+function ccIrAPagoDeudas(){
+  showView("gastos");
+  setTimeout(()=>{
+    verPagoDeudas = true;
+    const box = document.getElementById("pagoDeudasList");
+    const chev = document.getElementById("chevPagoDeudas");
+    if(box) box.style.display = "block";
+    if(chev) chev.textContent = "▲";
+    renderPagoDeudas();
+    const cont = document.getElementById("views");
+    ccScrollCentrado(box, cont);
+  }, 150);
+}
+function ccIrARespaldo(){
+  showView("ajustes");
+  setTimeout(()=>{
+    const b = document.getElementById("secRespaldoAjustes");
+    const cont = document.getElementById("views");
+    ccScrollCentrado(b, cont);
+  }, 150);
 }
 
 /* Pantalla de bienvenida: solo la primera vez que se abre la app */
