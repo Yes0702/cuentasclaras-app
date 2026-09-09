@@ -745,6 +745,7 @@
         </div>
         <label id="newRubroCantLabel">% del sobrante</label>
         <input type="text" inputmode="decimal" id="newRubroCant" class="mono-input" placeholder="0" oninput="onCantInput(this,'newRubroModo')">
+        <div class="hint" id="newRubroCantHint" style="margin-top:-6px; margin-bottom:10px;">El sobrante es tu ingreso menos gastos fijos y pagos de deuda.</div>
         <label>Día del mes en que pagas esta obligación (opcional)</label>
         <select id="newRubroDia" class="mono-input">
           <option value="">Sin recordatorio</option>
@@ -1691,6 +1692,12 @@ function alarmaDefault(){
 function nuevaAlarma(nombre){
   return Object.assign({ id: uid(), nombre: nombre || "Recordatorio" }, alarmaDefault());
 }
+function alarmasIniciales(){
+  return [
+    Object.assign(nuevaAlarma("Recordatorio"), { activa:true, hora:"13:00" }),
+    Object.assign(nuevaAlarma("Recordatorio 2"), { activa:true, hora:"20:00" })
+  ];
+}
 function normalizarAlarma(a){
   return {
     id: a.id || uid(),
@@ -1721,7 +1728,7 @@ function defaultState(){
     fondoEmergencia: { meses:3, ahorrado:0, aporteMensual:0, tasaAnual:0, historial:[] },
     mesActivo: MESES[new Date().getMonth()],
     anioActivo: ANIO_HOY,
-    alarmas: [nuevaAlarma("Recordatorio")]
+    alarmas: alarmasIniciales()
   };
 }
 
@@ -1798,7 +1805,7 @@ function loadState(){
         ingreso,
         rubros: migrarRubrosDesdePct((v1.rubros||[]).map(r=>({nombre:r.nombre, tipo:r.tipo, prioridad:r.prioridad, pct:r.pct})), ingreso),
         anioActivo: ANIO_HOY,
-        alarmas: [nuevaAlarma("Recordatorio")]
+        alarmas: alarmasIniciales()
       });
       return hidratar(migrado, base);
     }
@@ -2973,7 +2980,7 @@ function renderPresupuesto(){
           <input type="hidden" id="editIcono_${idx}" value="${esc(ccIconoRubro(r))}">
           <div id="iconoPreview_${idx}" style="font-size:30px; text-align:center; margin-bottom:8px;">${ccIconoRubro(r)}</div>
           <div style="display:grid; grid-template-columns:repeat(7, minmax(0,1fr)); gap:6px; justify-items:center; margin-bottom:14px;">
-            ${CC_ICONOS_RUBRO.map(ic=>`<button type="button" onclick="ccElegirIconoTemp(${idx},'${ic}')" style="font-size:17px; width:34px; height:34px; border-radius:9px; border:1px solid var(--line); background:var(--surface-2); cursor:pointer;">${ic}</button>`).join("")}
+            ${CC_ICONOS_RUBRO.map(ic=>`<button type="button" onclick="ccElegirIconoTemp(${idx},'${ic}')" style="font-size:17px; width:34px; height:34px; line-height:1; padding:0; display:flex; align-items:center; justify-content:center; border-radius:9px; border:1px solid var(--line); background:var(--surface-2); cursor:pointer;">${ic}</button>`).join("")}
           </div>
           <div class="field-row">
             <div><label>Tipo</label>
@@ -2993,6 +3000,7 @@ function renderPresupuesto(){
             <div><label id="editCantLabel_${idx}">Cantidad ${r.modo==="valor"?"($)":"(%)"}</label><input type="text" inputmode="decimal" id="editCant_${idx}" class="mono-input" value="${r.modo==="valor"?r.valor.toLocaleString('es-CO'):r.pct}" oninput="onCantInput(this,'editModo_${idx}')"></div>
             <div><label>Prioridad de pago</label><input type="number" id="editPrio_${idx}" class="mono-input" value="${r.prioridad}"></div>
           </div>
+          <div class="hint" id="editCantHint_${idx}" style="margin-top:-6px; margin-bottom:10px;">${ccTextoAyudaModo(r.modo)}</div>
           <label>Día del mes en que pagas (recordatorio, opcional)</label>
           <select id="editDia_${idx}" class="mono-input">
             <option value="">Sin recordatorio</option>
@@ -3129,6 +3137,8 @@ function onEditModoChange(idx){
   reformatCantidad("editCant_"+idx, modo);
   const lbl = document.getElementById("editCantLabel_"+idx);
   if(lbl) lbl.textContent = "Cantidad " + (modo==="valor" ? "($)" : "(%)");
+  const hintEl = document.getElementById("editCantHint_"+idx);
+  if(hintEl) hintEl.textContent = ccTextoAyudaModo(modo);
 }
 
 function saveRubroEdit(idx){
@@ -3174,12 +3184,19 @@ function toggleAddRubro(){
   if(panel.style.display==="block") syncNuevoModo();
 }
 
+function ccTextoAyudaModo(modo){
+  if(modo==="pct") return "El sobrante es tu ingreso menos gastos fijos y pagos de deuda.";
+  if(modo==="pctIngreso") return "Se calcula sobre tu ingreso total del mes, sin restarle nada.";
+  return "";
+}
 function syncNuevoModo(){
   const tipo = document.getElementById("newRubroTipo").value;
   const modoSel = document.getElementById("newRubroModo");
   if(!modoSel.dataset.tocado) modoSel.value = tipo==="Fijo" ? "valor" : "pct";
   const etiquetas = { valor:"Valor mensual ($)", pct:"% del sobrante", pctIngreso:"% del total del dinero" };
   document.getElementById("newRubroCantLabel").textContent = etiquetas[modoSel.value] || "Cantidad";
+  const hintEl = document.getElementById("newRubroCantHint");
+  if(hintEl) hintEl.textContent = ccTextoAyudaModo(modoSel.value);
   modoSel.dataset.tocado = "1";
   reformatCantidad("newRubroCant", modoSel.value);
 }
@@ -6198,7 +6215,7 @@ function mensajeRecordatorio(){
     if(dias >= 1) extra = `Tu último gasto fue hace ${dias} día${dias===1?"":"s"}.`;
     else extra = `Llevas ${gastosMes.length} gasto${gastosMes.length===1?"":"s"} este mes.`;
   }
-  return `Registra tus gastos de hoy en Cuentas Claras. ${extra}`;
+  return `Un momento para anotar tus gastos de hoy, así seguimos llevando las cuentas claras. ${extra}`;
 }
 
 function dispararAlarma(alarmaId){
