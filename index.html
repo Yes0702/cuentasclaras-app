@@ -608,8 +608,8 @@
           <select id="chartRubroInicio" aria-label="Rubro del comparativo"></select>
         </div>
         <div style="display:flex; gap:8px; margin:10px 0 4px;">
-          <button type="button" id="vistaBarras_inicio" class="btn-modo-abono activo" onclick="ccSetVistaChart('inicio','barras')" style="flex:1;">Barras</button>
-          <button type="button" id="vistaTorta_inicio" class="btn-modo-abono" onclick="ccSetVistaChart('inicio','torta')" style="flex:1;">Torta</button>
+          <button type="button" id="vistaTorta_inicio" class="btn-modo-abono activo" onclick="ccSetVistaChart('inicio','torta')" style="flex:1;">Torta</button>
+          <button type="button" id="vistaBarras_inicio" class="btn-modo-abono" onclick="ccSetVistaChart('inicio','barras')" style="flex:1;">Barras</button>
         </div>
         <div id="chartInicio"></div>
       </div>
@@ -771,7 +771,11 @@
           <div><label>Año</label><select id="gAnio" class="mono-input"></select></div>
         </div>
         <label>Rubro</label>
-        <select id="gRubro"></select>
+        <input type="hidden" id="gRubro">
+        <button type="button" id="gRubroBtn" onclick="ccAbrirPickerRubro()" style="width:100%; text-align:left; display:flex; align-items:center; justify-content:space-between; gap:8px; background:var(--surface-2); border:1px solid var(--line); border-radius:11px; padding:11px 12px; font-size:14.5px; font-weight:500; color:var(--ink); cursor:pointer;">
+          <span id="gRubroBtnTxt">Elegir rubro…</span>
+          <span style="color:var(--ink-mute);">▾</span>
+        </button>
         <div class="field-row">
           <div><label>Monto</label><input type="text" inputmode="numeric" id="gMonto" class="mono-input" placeholder="0"></div>
           <div><label>Nota (opcional)</label><input type="text" id="gNota" placeholder="Ej: compra semanal"></div>
@@ -807,8 +811,8 @@
           <select id="chartRubroGastos" aria-label="Rubro del comparativo"></select>
         </div>
         <div style="display:flex; gap:8px; margin:10px 0 4px;">
-          <button type="button" id="vistaBarras_gastos" class="btn-modo-abono activo" onclick="ccSetVistaChart('gastos','barras')" style="flex:1;">Barras</button>
-          <button type="button" id="vistaTorta_gastos" class="btn-modo-abono" onclick="ccSetVistaChart('gastos','torta')" style="flex:1;">Torta</button>
+          <button type="button" id="vistaTorta_gastos" class="btn-modo-abono activo" onclick="ccSetVistaChart('gastos','torta')" style="flex:1;">Torta</button>
+          <button type="button" id="vistaBarras_gastos" class="btn-modo-abono" onclick="ccSetVistaChart('gastos','barras')" style="flex:1;">Barras</button>
         </div>
         <div id="chartGastos"></div>
       </div>
@@ -1725,6 +1729,7 @@ function defaultState(){
     deudas: [],
     metas: [],
     inversiones: [],   // cada una: {id, nombre, monto, tasaAnual, plazoDias, fecha}
+    usoRubros: {},      // {"Mercado": 12, "Break": 5, ...} cuántas veces se usó cada rubro al registrar un gasto
     fondoEmergencia: { meses:3, ahorrado:0, aporteMensual:0, tasaAnual:0, historial:[] },
     mesActivo: MESES[new Date().getMonth()],
     anioActivo: ANIO_HOY,
@@ -2313,8 +2318,8 @@ function sincronizarFiltrosGastos(){
    GRÁFICA DE LÍNEAS (comparativo mensual)
    ===================================================================== */
 const chartState = {
-  inicio: { rubro:"Todos", pick:null, vista:"barras" },
-  gastos: { rubro:"Todos", pick:null, vista:"barras" }
+  inicio: { rubro:"Todos", pick:null, vista:"torta" },
+  gastos: { rubro:"Todos", pick:null, vista:"torta" }
 };
 
 function serieMensual(rubro, anio){
@@ -3252,17 +3257,76 @@ function normalizarPct(){
 /* =====================================================================
    RENDER: GASTOS
    ===================================================================== */
+function ccOrdenarPorUso(lista){
+  const uso = state.usoRubros || {};
+  return lista.slice().sort((a,b)=>{
+    const ua = uso[a.nombre]||0, ub = uso[b.nombre]||0;
+    if(ub !== ua) return ub - ua;          // más usado primero
+    return a.prioridad - b.prioridad;       // empate: por prioridad, como antes
+  });
+}
+let ccRubrosParaPicker = [];
+function ccActualizarBotonRubro(){
+  const val = document.getElementById("gRubro").value;
+  const r = state.rubros.find(x=>x.nombre===val);
+  const txt = document.getElementById("gRubroBtnTxt");
+  if(!txt) return;
+  txt.textContent = r ? (ccIconoRubro(r)+" "+r.nombre) : (state.rubros.length ? "Elegir rubro…" : "(crea rubros variables en Presupuesto)");
+}
+function ccAbrirPickerRubro(){
+  if(!ccRubrosParaPicker.length){ toast("Primero crea un rubro variable en Presupuesto."); return; }
+  const overlay = document.createElement("div");
+  overlay.id = "modalPickerRubro";
+  overlay.style.cssText = "position:fixed; inset:0; z-index:9999; background:rgba(0,0,0,.55); display:flex; align-items:flex-end; justify-content:center;";
+  overlay.innerHTML = `
+    <div style="background:var(--surface); border-radius:20px 20px 0 0; padding:18px 16px 22px; width:100%; max-width:460px; max-height:78vh; display:flex; flex-direction:column;">
+      <div style="font-weight:800; font-size:15px; margin-bottom:12px;">Elegir rubro</div>
+      <div style="display:flex; align-items:center; gap:8px; background:var(--surface-2); border:1px solid var(--line); border-radius:11px; padding:9px 12px; margin-bottom:10px;">
+        <span style="font-size:15px; color:var(--ink-mute);">🔎</span>
+        <input type="text" id="pickerRubroBuscar" placeholder="Buscar rubro…" oninput="ccRenderPickerRubro()" style="flex:1; border:none; background:transparent; padding:0; font-size:14px;">
+      </div>
+      <div id="pickerRubroLista" style="overflow-y:auto; flex:1;"></div>
+      <button class="btn-ghost" style="margin-top:10px;" onclick="ccCerrarPickerRubro()">Cancelar</button>
+    </div>`;
+  document.body.appendChild(overlay);
+  ccRenderPickerRubro();
+  setTimeout(()=>{ const b=document.getElementById("pickerRubroBuscar"); if(b) b.focus(); }, 50);
+}
+function ccRenderPickerRubro(){
+  const cont = document.getElementById("pickerRubroLista");
+  if(!cont) return;
+  const q = (document.getElementById("pickerRubroBuscar").value||"").trim().toLowerCase();
+  const lista = q ? ccRubrosParaPicker.filter(r=>r.nombre.toLowerCase().includes(q)) : ccRubrosParaPicker;
+  if(!lista.length){ cont.innerHTML = `<div class="empty-state">No hay ningún rubro que coincida.</div>`; return; }
+  cont.innerHTML = lista.map(r=>`
+    <div onclick="ccElegirRubroGasto('${esc(r.nombre)}')" style="display:flex; align-items:center; gap:10px; padding:11px 4px; border-bottom:1px solid var(--line-soft); cursor:pointer; font-size:14.5px;">
+      <span style="font-size:19px;">${ccIconoRubro(r)}</span><span>${esc(r.nombre)}</span>
+    </div>`).join("");
+}
+function ccElegirRubroGasto(nombre){
+  document.getElementById("gRubro").value = nombre;
+  ccActualizarBotonRubro();
+  ccCerrarPickerRubro();
+}
+function ccCerrarPickerRubro(){
+  const m = document.getElementById("modalPickerRubro");
+  if(m) m.remove();
+}
 function fillRubroSelects(){
-  // Selector de gasto MANUAL: excluye los rubros Fijos (esos van solo por interruptor)
-  const noFijos = state.rubros.filter(r=>r.tipo!=="Fijo").sort((a,b)=>a.prioridad-b.prioridad);
-  const optsManual = noFijos.map(r=>`<option value="${esc(r.nombre)}">${ccIconoRubro(r)} ${esc(r.nombre)}</option>`).join("");
+  // Selector de gasto MANUAL: excluye los rubros Fijos (esos van solo por interruptor), ordenado por uso
+  const noFijos = ccOrdenarPorUso(state.rubros.filter(r=>r.tipo!=="Fijo"));
+  ccRubrosParaPicker = noFijos;   // lista que usa el buscador de rubro
   const gR = document.getElementById("gRubro");
   const prevG = gR.value;
-  gR.innerHTML = optsManual || `<option value="">(crea rubros variables en Presupuesto)</option>`;
-  if(prevG && noFijos.some(r=>r.nombre===prevG)) gR.value = prevG;
+  if(prevG && noFijos.some(r=>r.nombre===prevG)){
+    // conserva la selección previa
+  } else {
+    gR.value = noFijos.length ? noFijos[0].nombre : "";
+  }
+  ccActualizarBotonRubro();
 
-  // Filtro de la lista: muestra TODOS (para poder ver también los fijos registrados)
-  const optsTodos = state.rubros.slice().sort((a,b)=>a.prioridad-b.prioridad)
+  // Filtro de la lista: muestra TODOS (para poder ver también los fijos registrados), también por uso
+  const optsTodos = ccOrdenarPorUso(state.rubros)
     .map(r=>`<option value="${esc(r.nombre)}">${ccIconoRubro(r)} ${esc(r.nombre)}</option>`).join("");
   const fR = document.getElementById("filtroRubro");
   const prevF = fR.value || "Todos";
@@ -3319,6 +3383,8 @@ function addGasto(){
   const nota = document.getElementById("gNota").value.trim();
   if(!fecha || monto<=0){ toast("Ingresa la fecha y un monto mayor a cero."); return; }
   state.gastos.push({id:uid(), fecha, mes, anio, rubro, monto, nota});
+  if(!state.usoRubros) state.usoRubros = {};
+  state.usoRubros[rubro] = (state.usoRubros[rubro]||0) + 1;
   document.getElementById("gMonto").value = "";
   document.getElementById("gNota").value = "";
   saveState();
