@@ -313,15 +313,24 @@
     padding:10px 12px; border-bottom:1px solid var(--line-soft); cursor:pointer;
   }
   .rubro-row:last-child{border-bottom:none;}
-  .rubro-row .r-name{font-size:13.5px; line-height:1.25; font-weight:600; min-width:0; overflow-wrap:anywhere;}
+  .rubro-row .r-name{font-size:13.5px; line-height:1.25; font-weight:600; min-width:0; overflow-wrap:break-word; word-break:normal;}
   .rubro-row .r-name .prio{font-family:var(--font-mono); font-size:10px; color:var(--ink-mute); display:block; font-weight:400; margin-top:1px;}
   .rubro-row input{padding:7px 6px; text-align:center; font-size:13px; border-radius:9px; width:100%; min-width:0; box-sizing:border-box;}
-  .rubro-row .r-monto{font-family:var(--font-mono); font-size:12.5px; text-align:right; color:var(--ink-soft); font-weight:500; min-width:0; overflow-wrap:anywhere;}
+  .rubro-row .r-monto{font-family:var(--font-mono); font-size:12.5px; text-align:right; color:var(--ink-soft); font-weight:500; min-width:0; overflow-wrap:break-word; word-break:normal;}
   .rubro-row .r-monto b{display:block; color:var(--ink); font-weight:600; font-size:13px;}
   /* Cuando el sistema usa letra muy grande, apila la fila para que nada se corte */
   @media (max-width: 360px){
     .rubro-row{ grid-template-columns:1fr minmax(70px,auto); }
     .rubro-row .r-monto{ grid-column:1 / -1; text-align:left; }
+  }
+  /* Cuando el tamaño de letra DE LA APP (Grande/Muy grande) está activo, apila toda la fila */
+  html[data-escala="grande"] .rubro-row,
+  html[data-escala="muygrande"] .rubro-row{
+    grid-template-columns: 1fr; row-gap: 6px;
+  }
+  html[data-escala="grande"] .rubro-row .r-monto,
+  html[data-escala="muygrande"] .rubro-row .r-monto{
+    grid-column: 1; text-align:left; display:flex; justify-content:space-between; align-items:baseline; gap:8px;
   }
   .group-total{
     display:flex; justify-content:space-between; font-family:var(--font-mono);
@@ -1099,6 +1108,14 @@
           <button type="button" id="temaBtnOscuro" class="btn-modo-abono" onclick="ccSetTema('oscuro')" style="flex:1;">Oscuro</button>
         </div>
         <div class="hint" style="margin-top:8px;">"Automático" sigue el modo oscuro/claro que tengas configurado en el celular.</div>
+
+        <label style="margin:16px 0 6px; display:block;">Tamaño de letra</label>
+        <div style="display:flex; gap:8px;">
+          <button type="button" id="tamBtnNormal" class="btn-modo-abono activo" onclick="ccSetTamanoLetra('normal')" style="flex:1;">Normal</button>
+          <button type="button" id="tamBtnGrande" class="btn-modo-abono" onclick="ccSetTamanoLetra('grande')" style="flex:1;">Grande</button>
+          <button type="button" id="tamBtnMuyGrande" class="btn-modo-abono" onclick="ccSetTamanoLetra('muygrande')" style="flex:1;">Muy grande</button>
+        </div>
+        <div class="hint" style="margin-top:8px;">Agranda el texto y los botones dentro de la app, sin depender del tamaño de letra del celular (eso evita que las palabras se encimen).</div>
       </div>
 
       <h2 class="section-title">Resumen semanal<div class="rule"></div></h2>
@@ -1937,6 +1954,30 @@ function ccCargarTema(){
   let modo = "auto";
   try{ modo = localStorage.getItem(CC_TEMA_KEY) || "auto"; }catch(e){}
   ccAplicarTema(modo);
+}
+const CC_TAMANO_KEY = "cc_tamano_letra";
+const CC_ESCALAS_TAMANO = { normal:1, grande:1.15, muygrande:1.3 };
+function ccAplicarTamanoLetra(tam){
+  const escala = CC_ESCALAS_TAMANO[tam] || 1;
+  const views = document.getElementById("views");
+  if(views) views.style.zoom = escala;
+  document.documentElement.setAttribute("data-escala", tam);
+  ["tamBtnNormal","tamBtnGrande","tamBtnMuyGrande"].forEach(id=>{
+    const el = document.getElementById(id);
+    if(el) el.classList.remove("activo");
+  });
+  const idBtn = tam==="grande" ? "tamBtnGrande" : tam==="muygrande" ? "tamBtnMuyGrande" : "tamBtnNormal";
+  const btn = document.getElementById(idBtn);
+  if(btn) btn.classList.add("activo");
+}
+function ccSetTamanoLetra(tam){
+  try{ localStorage.setItem(CC_TAMANO_KEY, tam); }catch(e){}
+  ccAplicarTamanoLetra(tam);
+}
+function ccCargarTamanoLetra(){
+  let tam = "normal";
+  try{ tam = localStorage.getItem(CC_TAMANO_KEY) || "normal"; }catch(e){}
+  ccAplicarTamanoLetra(tam);
 }
 function toast(msg){
   const t = document.getElementById("toast");
@@ -5583,7 +5624,7 @@ const CONFIG = {
   apiVersion: "https://api.github.com/repos/Yes0702/cuentasclaras/releases/latest",
   urlVersion: "https://github.com/Yes0702/cuentasclaras/releases/latest/download/version.json"
 };
-const APP_VERSION = "9.8";
+const APP_VERSION = "9.9";
 
 /* =====================================================================
    AVISO DE ACTUALIZACIÓN (revisa al abrir la app)
@@ -6905,6 +6946,7 @@ function ccLlenarDiasPago(){
 ccLlenarDiasPago();
 
 ccCargarTema();
+ccCargarTamanoLetra();
 ccMostrarWelcomeSiPrimeraVez();
 setTimeout(ccMostrarAyudaSiListo, 900);
 
