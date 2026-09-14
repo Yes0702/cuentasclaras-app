@@ -861,12 +861,8 @@
 
       <h2 class="section-title">Exportar e importar<div class="rule"></div></h2>
       <div class="card">
-        <div class="hint" style="margin-bottom:10px;">El <b>Excel</b> y los <b>CSV</b> sirven para ver o imprimir tus datos, pero <b>no se pueden volver a cargar</b> en la app.</div>
+        <div class="hint" style="margin-bottom:10px;">El <b>Excel</b> sirve para ver o imprimir tus datos, pero <b>no se puede volver a cargar</b> en la app.</div>
         <button class="btn-primary" style="margin-top:0;" onclick="exportXLSX()">⬇ Exportar a Excel (.xlsx)</button>
-        <div class="io-row">
-          <button class="btn-ghost" onclick="exportGastosCSV()">CSV de gastos</button>
-          <button class="btn-ghost" onclick="exportResumenCSV()">CSV resumen anual</button>
-        </div>
         <div style="margin-top:14px; padding:12px; background:var(--brand-soft); border:1px solid #BFE9DA; border-radius:11px;">
           <div class="hint" style="color:var(--brand-dark); font-weight:600; margin-bottom:4px;">💾 Respaldo de todos tus datos</div>
           <div class="hint" style="color:var(--brand-dark); margin-bottom:8px;">Este es el <b>único</b> archivo que puedes volver a cargar. Úsalo para cambiar de celular o antes de desinstalar.</div>
@@ -1257,10 +1253,6 @@
       <h2 class="section-title">Datos<div class="rule"></div></h2>
       <div class="card">
         <button class="btn-primary" style="margin-top:0;" onclick="exportXLSX()">⬇ Exportar a Excel (.xlsx)</button>
-        <div class="io-row">
-          <button class="btn-ghost" onclick="exportGastosCSV()">CSV de gastos</button>
-          <button class="btn-ghost" onclick="exportResumenCSV()">CSV resumen</button>
-        </div>
         <div id="secRespaldoAjustes" style="margin-top:14px; padding:12px; background:var(--brand-soft); border:1px solid #BFE9DA; border-radius:11px;">
           <div class="hint" style="color:var(--brand-dark); font-weight:600; margin-bottom:8px;">💾 Respaldo de todos tus datos</div>
           <button class="btn-primary" style="margin-top:0;" onclick="exportBackupJSON()">⬇ Descargar respaldo (guardar)</button>
@@ -4360,7 +4352,7 @@ ${hojas.map((h,i)=>`<Relationship Id="rId${i+1}" Type="http://schemas.openxmlfor
   return zipFiles(files);
 }
 
-function exportXLSX(){
+async function exportXLSX(){
   try{
     const anio = state.anioActivo;
     const hojas = [];
@@ -4436,7 +4428,9 @@ function exportXLSX(){
     hojas.push({nombre:"Ahorros", filas:filasMetas});
 
     const blob = construirXLSX(hojas);
-    downloadFile(`cuentas_claras_${anio}.xlsx`, blob);
+    const buffer = await blob.arrayBuffer();
+    const base64 = ccArrayBufferABase64(buffer);
+    await downloadFileBase64(`cuentas_claras_${anio}.xlsx`, base64, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "Cuentas Claras", "");
     toast("Excel descargado ✓");
   }catch(err){
     console.error(err);
