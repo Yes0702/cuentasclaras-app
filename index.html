@@ -912,6 +912,16 @@
         <label>% de interés anual que te cobran (opcional)</label>
         <input type="text" inputmode="decimal" id="dTasa" class="mono-input" placeholder="Ej: 24">
 
+        <label style="display:flex; align-items:center; gap:8px; margin-top:14px; text-transform:none; letter-spacing:0; font-weight:600; color:var(--ink);">
+          <input type="checkbox" id="dTieneManejo" style="width:auto;" onchange="document.getElementById('dManejoBody').style.display=this.checked?'block':'none'; if(!this.checked) document.getElementById('dManejoValor').value='';">
+          💳 ¿Tiene cuota de manejo?
+        </label>
+        <div id="dManejoBody" style="display:none; padding-top:2px;">
+          <label>Valor de la cuota de manejo (mensual)</label>
+          <input type="text" inputmode="numeric" id="dManejoValor" class="mono-input" placeholder="0">
+          <div class="hint" style="margin-top:4px;">Se suma automáticamente a tu pago del mes, todos los meses.</div>
+        </div>
+
         <div class="cc-seccion">Fechas clave</div>
         <label>📅 Fecha de corte (opcional, solo si es tarjeta de crédito)</label>
         <select id="dCorte" class="mono-input">
@@ -947,14 +957,39 @@
         <div class="hint" id="existDeudaResumen" style="margin:8px 0 0; padding:9px 12px; background:var(--brand-soft); border-radius:10px; color:var(--brand-dark); font-weight:600;"></div>
 
         <div class="cc-seccion">Detalles de la nueva compra</div>
-        <label>🧾 Descripción de la compra/movimiento</label>
-        <input type="text" id="existDescripcion" placeholder="Ej: Compra supermercado">
-        <div class="field-row">
-          <div><label>💰 Valor</label><input type="text" inputmode="numeric" id="existValor" class="mono-input" placeholder="0" oninput="onExistPreview()"></div>
-          <div><label>¿Cuotas?</label><input type="number" min="1" id="existCuotas" class="mono-input" placeholder="Ej: 3" oninput="onExistPreview()"></div>
+        <div class="cc-seccion">Tipo de movimiento</div>
+        <div style="display:flex; gap:8px; margin-bottom:14px;">
+          <button type="button" id="btnTipoCompra" class="btn-modo-abono activo" style="flex:1;" onclick="ccSetTipoMovimiento('compra')">🛒 Compra a cuotas</button>
+          <button type="button" id="btnTipoAvance" class="btn-modo-abono" style="flex:1;" onclick="ccSetTipoMovimiento('avance')">💵 Avance en efectivo</button>
         </div>
-        <label>📅 Fecha de la compra</label>
-        <input type="date" id="existFecha">
+
+        <div class="cc-seccion">Detalles del movimiento</div>
+        <label>🧾 Descripción</label>
+        <input type="text" id="existDescripcion" placeholder="Ej: Compra supermercado">
+
+        <div id="bloqueTipoCompra">
+          <div class="field-row">
+            <div><label>💰 Valor</label><input type="text" inputmode="numeric" id="existValor" class="mono-input" placeholder="0" oninput="onExistPreview()"></div>
+            <div><label>¿Cuotas?</label><input type="number" min="1" id="existCuotas" class="mono-input" placeholder="Ej: 3" oninput="onExistPreview()"></div>
+          </div>
+          <label>📅 Fecha de la compra</label>
+          <input type="date" id="existFecha">
+          <label>% de interés de esta compra (opcional — vacío = diferido sin interés)</label>
+          <input type="text" inputmode="decimal" id="existTasa" class="mono-input" placeholder="Ej: 24" oninput="onExistPreview()">
+        </div>
+
+        <div id="bloqueTipoAvance" style="display:none;">
+          <div class="hint" style="margin:0 0 12px; padding:9px 12px; background:#FFF4E6; border:1px solid #F0D8A8; border-radius:10px; color:#8A5A1F;">⚠️ El avance en efectivo cobra interés desde el mismo día que lo sacas, no desde el corte de la tarjeta.</div>
+          <label>💵 Monto del avance</label>
+          <input type="text" inputmode="numeric" id="existAvanceValor" class="mono-input" placeholder="0" oninput="onExistPreview()">
+          <label>📅 Fecha en que lo sacaste</label>
+          <input type="date" id="existAvanceFecha">
+          <label>% de interés anual del avance</label>
+          <input type="text" inputmode="decimal" id="existAvanceTasa" class="mono-input" placeholder="Ej: 32" oninput="onExistPreview()">
+          <label>¿En cuántas cuotas piensas pagarlo? (opcional)</label>
+          <input type="number" min="1" id="existAvanceCuotas" class="mono-input" placeholder="Ej: 3 — o déjalo vacío" oninput="onExistPreview()">
+        </div>
+
         <div class="hint" id="existPreview" style="margin-top:10px; padding:9px 12px; background:var(--surface-2); border-radius:10px;"></div>
         <button class="btn-primary" onclick="confirmarAgregarMovimiento()">Confirmar adición</button>
       </div>
@@ -4469,6 +4504,12 @@ function fechaLocalHoy(){
   const hoy = new Date();
   return hoy.getFullYear()+"-"+String(hoy.getMonth()+1).padStart(2,"0")+"-"+String(hoy.getDate()).padStart(2,"0");
 }
+function ccDiasEntre(fechaA, fechaB){
+  if(!fechaA || !fechaB) return 0;
+  const a = new Date(fechaA+"T00:00:00");
+  const b = new Date(fechaB+"T00:00:00");
+  return Math.max(0, Math.round((b - a) / 86400000));
+}
 function ccMesActualStr(){
   const hoy = new Date();
   return hoy.getFullYear()+"-"+String(hoy.getMonth()+1).padStart(2,"0");
@@ -4523,6 +4564,21 @@ function ccDistribuirCapitalMovimientos(d, monto){
    sigue leyendo d.saldo y d.pago normalmente, sin tener que tocar esos +50 lugares. */
 function recalcularDeuda(d){
   if(!Array.isArray(d.movimientos) || d.movimientos.length===0) return;
+  const hoy = fechaLocalHoy();
+  // Los avances en efectivo generan interés DIARIO, desde el mismo día, sin importar
+  // la fecha de corte. Se "pone al día" cada vez que se recalcula (ej. al abrir la app).
+  d.movimientos.forEach(m=>{
+    if(m.tipo==="avance" && (m.saldo||0)>0 && m.tasaAnual>0){
+      const dias = ccDiasEntre(m.fechaUltimoCalculo || m.fecha, hoy);
+      if(dias>0){
+        const tasaDiaria = m.tasaAnual/100/365;
+        const interes = Math.round((m.saldo||0) * tasaDiaria * dias);
+        m.saldo = (m.saldo||0) + interes;
+        m.interesGenerado = (m.interesGenerado||0) + interes;
+        m.fechaUltimoCalculo = hoy;
+      }
+    }
+  });
   const mesActual = ccMesActualStr();
   d.saldo = Math.round(d.movimientos.reduce((s,m)=> s + Math.max(0, m.saldo||0), 0) + (d.interesAcumuladoNoPagado||0));
   // El pago del mes solo incluye movimientos que YA empezaron a facturar (según la fecha de corte)
@@ -4532,10 +4588,11 @@ function recalcularDeuda(d){
     if(m.primerMes && m.primerMes > mesActual) return s; // aún no le toca facturar
     return s + (m.cuotaMensual||0);
   }, 0));
+  if(d.cuotaManejoActiva) d.pago += Math.round(d.cuotaManejoValor||0);
   d.inicial = Math.round(d.movimientos.reduce((s,m)=> s + Math.max(0, m.valor||0), 0));
-  // Sello automático de "pagada": se guarda la fecha la primera vez que llega a $0,
-  // y se limpia solo si vuelve a tener saldo (por ejemplo, si agregas una compra nueva).
-  if(d.saldo<=0){
+  // Sello automático de "pagada": solo cuenta como pagada si además NO tiene
+  // cuota de manejo activa (esa te la siguen cobrando cada mes aunque el saldo esté en $0).
+  if(d.saldo<=0 && !d.cuotaManejoActiva){
     if(!d.fechaPagada) d.fechaPagada = fechaLocalHoy();
   } else {
     d.fechaPagada = null;
@@ -4543,21 +4600,40 @@ function recalcularDeuda(d){
 }
 
 /* Agrega un movimiento (compra) nuevo a una deuda EXISTENTE, sin crear una deuda duplicada. */
-function agregarMovimientoDeuda(deudaId, {descripcion, valor, cuotas, fecha}){
+/* Cuota fija de una compra a cuotas. Si no hay interés (o es 1 sola cuota), es
+   simplemente valor÷cuotas. Si hay interés, usa la fórmula real de amortización. */
+function ccCuotaAmortizada(valor, cuotas, tasaAnual){
+  if(!(cuotas>1) || !(tasaAnual>0)) return cuotas>0 ? Math.ceil(valor/(cuotas||1)) : valor;
+  const i = tasaAnual/100/12;
+  return Math.ceil(valor * i / (1 - Math.pow(1+i, -cuotas)));
+}
+
+function agregarMovimientoDeuda(deudaId, {tipo, descripcion, valor, cuotas, tasaAnual, fecha}){
   const d = state.deudas.find(x=>x.id===deudaId);
   if(!d) return;
   if(!Array.isArray(d.movimientos)) d.movimientos = [];
-  const cuotaMensual = cuotas>0 ? Math.ceil(valor/cuotas) : valor;
+  const esAvance = tipo === "avance";
+  // Compra a cuotas: cuota fija por amortización (o simple si no hay interés).
+  // Avance en efectivo: no se amortiza con fórmula de cuotas — el interés corre
+  // día a día sobre el saldo (ver recalcularDeuda). La "cuota" aquí es solo
+  // un plan de pago sugerido, opcional.
+  const cuotaMensual = esAvance
+    ? (cuotas>0 ? Math.ceil(valor/cuotas) : 0)
+    : ccCuotaAmortizada(valor, cuotas, tasaAnual);
+  const fechaMov = fecha || fechaLocalHoy();
   d.movimientos.push({
     id: uid(),
-    descripcion: descripcion || "Compra",
+    tipo: esAvance ? "avance" : "compra",
+    descripcion: descripcion || (esAvance ? "Avance en efectivo" : "Compra"),
     valor: valor || 0,
     saldo: valor || 0,
     cuotas: cuotas || 0,
     cuotaMensual,
     cuotasPagadas: 0,
-    tasaAnual: d.tasaAnual || 0,   // hereda la tasa de la tarjeta/deuda, no se vuelve a preguntar
-    fecha: fecha || fechaLocalHoy(),
+    tasaAnual: tasaAnual || 0,   // interés propio de ESTE movimiento (0 = diferido sin interés, solo aplica a compras)
+    fecha: fechaMov,
+    fechaUltimoCalculo: fechaMov, // desde aquí empieza a contar el interés diario (solo avances)
+    interesGenerado: 0,
     primerMes: ccCalcularPrimerMes(fecha, d.diaCorte),
     activo: true
   });
@@ -4584,7 +4660,18 @@ function ccSetModoDeudaForm(modo){
   document.getElementById("panelDeudaExistente").style.display = esNueva ? "none" : "";
   document.getElementById("btnModoNuevaDeuda").classList.toggle("activo", esNueva);
   document.getElementById("btnModoDeudaExistente").classList.toggle("activo", !esNueva);
-  if(!esNueva) poblarSelectDeudaExistente();
+  if(!esNueva){ poblarSelectDeudaExistente(); ccSetTipoMovimiento("compra"); }
+}
+
+let existTipoMovimiento = "compra";
+function ccSetTipoMovimiento(tipo){
+  existTipoMovimiento = tipo;
+  const esCompra = tipo === "compra";
+  document.getElementById("bloqueTipoCompra").style.display = esCompra ? "" : "none";
+  document.getElementById("bloqueTipoAvance").style.display = esCompra ? "none" : "";
+  document.getElementById("btnTipoCompra").classList.toggle("activo", esCompra);
+  document.getElementById("btnTipoAvance").classList.toggle("activo", !esCompra);
+  onExistPreview();
 }
 
 /* Llena el desplegable de "Selecciona la deuda" con las deudas actuales */
@@ -4607,23 +4694,58 @@ function onExistDeudaChange(){
 
 function onExistPreview(){
   const el = document.getElementById("existPreview");
+  if(existTipoMovimiento === "avance"){
+    const valor = numFromMasked("existAvanceValor");
+    const tasaAnual = parseFloat(String(document.getElementById("existAvanceTasa").value||"").replace(",","."))||0;
+    const cuotas = parseInt(document.getElementById("existAvanceCuotas").value)||0;
+    if(valor<=0){ el.textContent=""; return; }
+    const tasaDiaria = tasaAnual/100/365;
+    let texto = `Avance de <b>${money(valor)}</b>`;
+    if(tasaAnual>0) texto += ` · genera ~${money(Math.round(valor*tasaDiaria))} de interés por cada día que pase sin pagarlo`;
+    texto += cuotas>0 ? `. Cuota sugerida: <b>${money(Math.ceil(valor/cuotas))}</b>/mes.` : ". Sin cuota fija: se suma al saldo total hasta que lo pagues.";
+    el.innerHTML = texto;
+    return;
+  }
   const valor = numFromMasked("existValor");
   const cuotas = parseInt(document.getElementById("existCuotas").value)||0;
+  const tasaEl = document.getElementById("existTasa");
+  const tasaAnual = tasaEl ? (parseFloat(String(tasaEl.value).replace(",","."))||0) : 0;
   if(valor<=0){ el.textContent=""; return; }
-  const cuotaMensual = cuotas>0 ? Math.ceil(valor/cuotas) : valor;
-  el.innerHTML = `Nueva cuota: <b>${money(cuotaMensual)}</b>${cuotas>0?` / mes durante ${cuotas} cuotas`:" (una sola cuota)"}.`;
+  const cuotaMensual = ccCuotaAmortizada(valor, cuotas, tasaAnual);
+  let texto = `Nueva cuota: <b>${money(cuotaMensual)}</b>${cuotas>0?` / mes durante ${cuotas} cuotas`:" (una sola cuota)"}.`;
+  if(tasaAnual>0 && cuotas>1){
+    const totalPagado = cuotaMensual*cuotas;
+    texto += ` Total a pagar: <b>${money(totalPagado)}</b> (${money(totalPagado-valor)} de interés).`;
+  }
+  el.innerHTML = texto;
 }
 
 function confirmarAgregarMovimiento(){
   const deudaId = document.getElementById("existDeudaId").value;
   const descripcion = document.getElementById("existDescripcion").value.trim();
+  if(!deudaId){ toast("Selecciona una deuda."); return; }
+
+  if(existTipoMovimiento === "avance"){
+    const valor = numFromMasked("existAvanceValor");
+    const fecha = document.getElementById("existAvanceFecha").value;
+    const tasaAnual = parseFloat(String(document.getElementById("existAvanceTasa").value||"").replace(",","."))||0;
+    const cuotas = parseInt(document.getElementById("existAvanceCuotas").value)||0;
+    if(valor<=0){ toast("Escribe el monto del avance."); return; }
+    agregarMovimientoDeuda(deudaId, {tipo:"avance", descripcion, valor, cuotas, tasaAnual, fecha});
+    ["existDescripcion","existAvanceValor","existAvanceFecha","existAvanceTasa","existAvanceCuotas"].forEach(id=>document.getElementById(id).value="");
+    document.getElementById("existPreview").textContent = "";
+    toast("Avance agregado a "+ (state.deudas.find(x=>x.id===deudaId)||{}).nombre);
+    return;
+  }
+
   const valor = numFromMasked("existValor");
   const cuotas = parseInt(document.getElementById("existCuotas").value)||0;
   const fecha = document.getElementById("existFecha").value;
-  if(!deudaId){ toast("Selecciona una deuda."); return; }
+  const tasaEl = document.getElementById("existTasa");
+  const tasaAnual = tasaEl ? (parseFloat(String(tasaEl.value).replace(",","."))||0) : 0;
   if(valor<=0){ toast("Escribe el valor de la compra."); return; }
-  agregarMovimientoDeuda(deudaId, {descripcion, valor, cuotas, fecha});
-  ["existDescripcion","existValor","existCuotas","existFecha"].forEach(id=>document.getElementById(id).value="");
+  agregarMovimientoDeuda(deudaId, {tipo:"compra", descripcion, valor, cuotas, tasaAnual, fecha});
+  ["existDescripcion","existValor","existCuotas","existTasa","existFecha"].forEach(id=>document.getElementById(id).value="");
   document.getElementById("existPreview").textContent = "";
   toast("Compra agregada a "+ (state.deudas.find(x=>x.id===deudaId)||{}).nombre);
 }
@@ -4639,8 +4761,10 @@ function addDeuda(){
   const tasaAnual = tasaEl ? (parseFloat(String(tasaEl.value).replace(",","."))||0) : 0;
   const diaPago = parseInt(document.getElementById("dDiaPago").value)||0;
   const diaCorte = parseInt(document.getElementById("dCorte").value)||0;
+  const cuotaManejoActiva = document.getElementById("dTieneManejo").checked;
+  const cuotaManejoValor = cuotaManejoActiva ? numFromMasked("dManejoValor") : 0;
   if(!nombre || inicial<=0 || pago<=0){ toast("Completa nombre, deuda inicial y pago mensual."); return; }
-  const nuevaDeuda = {id:uid(), nombre, inicial, saldo, pago, fecha, mesesObjetivo, tasaAnual, interesPagado:0, diaPago, diaCorte, interesAcumuladoNoPagado:0};
+  const nuevaDeuda = {id:uid(), nombre, inicial, saldo, pago, fecha, mesesObjetivo, tasaAnual, interesPagado:0, diaPago, diaCorte, interesAcumuladoNoPagado:0, cuotaManejoActiva, cuotaManejoValor};
   nuevaDeuda.movimientos = [{
     id: uid(),
     descripcion: nombre,
@@ -4655,7 +4779,9 @@ function addDeuda(){
     activo: saldo > 0
   }];
   state.deudas.push(nuevaDeuda);
-  ["dNombre","dInicial","dSaldo","dPago","dTasa","dCorte","dDiaPago","dFecha","dMeses"].forEach(id=>document.getElementById(id).value="");
+  ["dNombre","dInicial","dSaldo","dPago","dTasa","dCorte","dDiaPago","dFecha","dMeses","dManejoValor"].forEach(id=>document.getElementById(id).value="");
+  document.getElementById("dTieneManejo").checked = false;
+  document.getElementById("dManejoBody").style.display = "none";
   document.getElementById("deudaPagoHint").textContent = "";
   saveState();
   renderDeudas();
@@ -5287,6 +5413,9 @@ function saveDeudaEdit(id){
     });
   }
   d.interesAcumuladoNoPagado = 0; // la edición manual reemplaza cualquier residuo previo
+  const edManejo = document.getElementById("edTieneManejo_"+id);
+  d.cuotaManejoActiva = edManejo ? edManejo.checked : false;
+  d.cuotaManejoValor = d.cuotaManejoActiva ? numFromMasked("edManejoValor_"+id) : 0;
   recalcularDeuda(d);
   d.inicial = nuevoInicial; // respeta el valor inicial tal como lo escribió el usuario
 
@@ -5321,6 +5450,40 @@ function toggleVerMovimientos(id){
   renderDeudas();
 }
 
+/* Pago dirigido a UN movimiento en específico (ej. pagar solo el avance, no toda la tarjeta) */
+let pagandoMovimientoId = null;
+function ccTogglePagoMovimiento(movId){
+  pagandoMovimientoId = (pagandoMovimientoId===movId) ? null : movId;
+  renderDeudas();
+}
+function ccPagarMovimientoEspecifico(deudaId, movId){
+  const d = state.deudas.find(x=>x.id===deudaId);
+  if(!d) return;
+  const m = (d.movimientos||[]).find(x=>x.id===movId);
+  if(!m) return;
+  const monto = numFromMasked("pagoMovInput_"+movId);
+  if(monto<=0){ toast("Escribe cuánto pagaste."); return; }
+  const aplicado = Math.min(monto, m.saldo||0);
+  m.saldo = Math.round((m.saldo||0) - aplicado);
+  if(m.cuotaMensual>0) m.cuotasPagadas = Math.min(m.cuotas||0, Math.round(((m.valor||0)-m.saldo)/m.cuotaMensual));
+  if(m.saldo<=0){ m.saldo=0; m.activo=false; }
+  recalcularDeuda(d);
+  // Se registra como gasto, igual que un pago normal, pero con nota que identifica el movimiento exacto.
+  state.gastos.push({
+    id: uid(), fecha: fechaLocalHoy(),
+    mes: state.mesActivo, anio: state.anioActivo,
+    rubro: "Pago de deuda: "+d.nombre, monto: aplicado,
+    nota: "Pago: "+(m.descripcion||(m.tipo==="avance"?"Avance en efectivo":"Compra")),
+    origenDeuda: d.id, origenMovimiento: m.id
+  });
+  pagandoMovimientoId = null;
+  saveState();
+  renderGastos();
+  renderDeudas();
+  renderDashboard();
+  toast("Pago de "+money(aplicado)+" aplicado a "+(m.descripcion||"ese movimiento"));
+}
+
 function renderDeudas(){
   if(document.getElementById("existDeudaId")) poblarSelectDeudaExistente();
   const box = document.getElementById("deudasList");
@@ -5338,10 +5501,18 @@ function renderDeudas(){
           <div><label>Deuda inicial</label><input type="text" inputmode="numeric" id="edI_${d.id}" class="mono-input" value="${d.inicial.toLocaleString('es-CO')}"></div>
           <div><label>Saldo actual</label><input type="text" inputmode="numeric" id="edS_${d.id}" class="mono-input" value="${d.saldo.toLocaleString('es-CO')}"></div>
         </div>
-        <label>Pago mensual</label>
-        <input type="text" inputmode="numeric" id="edP_${d.id}" class="mono-input" value="${d.pago.toLocaleString('es-CO')}">
+        <label>Pago mensual (solo de las compras, sin cuota de manejo)</label>
+        <input type="text" inputmode="numeric" id="edP_${d.id}" class="mono-input" value="${(d.pago-(d.cuotaManejoActiva?d.cuotaManejoValor||0:0)).toLocaleString('es-CO')}">
         <label>% de interés anual (opcional)</label>
         <input type="text" inputmode="decimal" id="edT_${d.id}" class="mono-input" value="${d.tasaAnual||""}">
+        <label style="display:flex; align-items:center; gap:8px; margin-top:14px; text-transform:none; letter-spacing:0; font-weight:600; color:var(--ink);">
+          <input type="checkbox" id="edTieneManejo_${d.id}" style="width:auto;" ${d.cuotaManejoActiva?"checked":""} onchange="document.getElementById('edManejoBody_${d.id}').style.display=this.checked?'block':'none';">
+          💳 ¿Tiene cuota de manejo?
+        </label>
+        <div id="edManejoBody_${d.id}" style="display:${d.cuotaManejoActiva?"block":"none"}; padding-top:2px;">
+          <label>Valor de la cuota de manejo (mensual)</label>
+          <input type="text" inputmode="numeric" id="edManejoValor_${d.id}" class="mono-input" value="${d.cuotaManejoValor?d.cuotaManejoValor.toLocaleString('es-CO'):""}">
+        </div>
         <label>Fecha de corte (opcional, solo si es tarjeta de crédito)</label>
         <select id="edCorte_${d.id}" class="mono-input">
           <option value="">Sin fecha de corte</option>
@@ -5368,7 +5539,7 @@ function renderDeudas(){
     }
     const pctPagado = d.inicial>0 ? Math.min(100, (1-d.saldo/d.inicial)*100) : 0;
     const barClass = pctPagado>=66 ? "debt-high" : (pctPagado>=33 ? "debt-mid" : "debt-low");
-    if(d.saldo<=0){
+    if(d.saldo<=0 && !d.cuotaManejoActiva){
       return `<div class="card" id="deudaCard_${d.id}" onclick="openDeudaEdit('${d.id}')" style="background:var(--brand-soft); border-color:#BFE9DA;">
         <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:10px; flex-wrap:wrap;">
           <div style="min-width:0;">
@@ -5403,7 +5574,7 @@ function renderDeudas(){
       <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:10px; flex-wrap:wrap;">
         <div style="min-width:0;">
           <div style="font-weight:700; font-size:14.5px;">💳 ${esc(d.nombre)}</div>
-          <div class="hint" style="margin-top:2px;">Pago mensual ${money(d.pago)} · ${mesesTexto}${d.fecha ? ` · meta: ${d.fecha}` : ""}${d.diaCorte ? ` · Corte: día ${d.diaCorte}` : ""}</div>
+          <div class="hint" style="margin-top:2px;">Pago mensual ${money(d.pago)} · ${mesesTexto}${d.fecha ? ` · meta: ${d.fecha}` : ""}${d.diaCorte ? ` · Corte: día ${d.diaCorte}` : ""}${d.cuotaManejoActiva ? ` · Manejo: ${money(d.cuotaManejoValor)}` : ""}</div>
         </div>
         ${esPendiente("deuda:"+d.id)
           ? `<button class="r-del confirm" onclick="event.stopPropagation(); deleteDeuda('${d.id}')">✓ Eliminar</button>`
@@ -5421,12 +5592,21 @@ function renderDeudas(){
         <span>Ver movimientos (${d.movimientos.length})</span><span>${verMovimientosSet.has(d.id)?"▴":"▾"}</span>
       </button>
       ${verMovimientosSet.has(d.id) ? `<div onclick="event.stopPropagation();" style="margin-bottom:10px;">
-        ${d.movimientos.map(m=>`<div style="display:flex; justify-content:space-between; align-items:center; gap:10px; flex-wrap:wrap; padding:9px 4px; border-bottom:1px solid var(--line-soft);">
-          <div style="min-width:0;">
-            <div style="font-size:13px; font-weight:600;">${esc(m.descripcion||"Compra")}</div>
-            <div class="hint" style="margin-top:1px;">${m.cuotas>0 ? m.cuotas+" cuotas" : "1 pago"}${m.fecha ? " · desde "+m.fecha : ""}${(m.saldo||0)<=0 ? " · pagado" : ""}</div>
+        ${d.movimientos.map(m=>`<div style="padding:9px 4px; border-bottom:1px solid var(--line-soft);">
+          <div style="display:flex; justify-content:space-between; align-items:center; gap:10px; flex-wrap:wrap;">
+            <div style="min-width:0;">
+              <div style="font-size:13px; font-weight:600;">${m.tipo==="avance"?"💵 ":""}${esc(m.descripcion||"Compra")}</div>
+              <div class="hint" style="margin-top:1px;">${m.tipo==="avance" ? "Avance en efectivo"+((m.interesGenerado||0)>0?` · interés generado: ${money(m.interesGenerado)}`:"") : (m.cuotas>0 ? m.cuotas+" cuotas" : "1 pago")}${m.fecha ? " · desde "+m.fecha : ""}${(m.saldo||0)<=0 ? " · pagado" : ""}</div>
+            </div>
+            <div style="display:flex; align-items:center; gap:8px;">
+              <div style="font-family:var(--font-mono); font-size:13px;">${money(m.saldo)}</div>
+              ${(m.saldo||0)>0 ? `<button type="button" onclick="event.stopPropagation(); ccTogglePagoMovimiento('${m.id}')" style="font-size:11px; font-weight:700; color:var(--brand-dark); background:var(--brand-soft); border:none; border-radius:8px; padding:6px 10px;">💰 Pagar</button>` : ""}
+            </div>
           </div>
-          <div style="font-family:var(--font-mono); font-size:13px;">${money(m.saldo)}</div>
+          ${pagandoMovimientoId===m.id ? `<div onclick="event.stopPropagation();" style="margin-top:8px; display:flex; gap:6px; flex-wrap:wrap;">
+            <input type="text" inputmode="numeric" id="pagoMovInput_${m.id}" class="mono-input" placeholder="0" style="flex:1; min-width:100px;">
+            <button type="button" class="btn-primary" style="margin-top:0; padding:0 16px;" onclick="event.stopPropagation(); ccPagarMovimientoEspecifico('${d.id}','${m.id}')">Confirmar</button>
+          </div>` : ""}
         </div>`).join("")}
       </div>` : ""}` : ""}
       ${abonandoDeudaId===d.id
@@ -5469,6 +5649,10 @@ function renderDeudas(){
     if(el) maskMiles(el);
     const elM = document.getElementById("abonoMensualInput_"+abonandoDeudaId);
     if(elM) maskMiles(elM);
+  }
+  if(pagandoMovimientoId){
+    const elP = document.getElementById("pagoMovInput_"+pagandoMovimientoId);
+    if(elP) maskMiles(elP);
   }
 }
 
@@ -7206,7 +7390,7 @@ function renderAll(){
 document.getElementById("gFecha").value = fechaLocalHoy();
 document.getElementById("feAporteFechaNueva").value = fechaLocalHoy();
 document.getElementById("invFecha").value = fechaLocalHoy();
-["gMonto","dInicial","dSaldo","dPago","feAhorrado","feAporte","feAporteMontoNuevo","mObjetivo","mAhorrado","newIngresoMonto","invMonto","c4Monto","credMonto","existValor"].forEach(id=>{
+["gMonto","dInicial","dSaldo","dPago","feAhorrado","feAporte","feAporteMontoNuevo","mObjetivo","mAhorrado","newIngresoMonto","invMonto","c4Monto","credMonto","existValor","dManejoValor","existAvanceValor"].forEach(id=>{
   const el = document.getElementById(id);
   if(el) maskMiles(el);
 });
