@@ -2893,12 +2893,12 @@ function toggleAddIngreso(){
   const panel = document.getElementById("addIngresoPanel");
   panel.style.display = panel.style.display==="none" ? "block" : "none";
   const f = document.getElementById("newIngresoFecha");
-  if(f && !f.value) f.value = new Date().toISOString().slice(0,10);
+  if(f && !f.value) f.value = fechaLocalHoy();
 }
 function addIngreso(){
   const nombre = document.getElementById("newIngresoNombre").value.trim();
   const monto = numFromMasked("newIngresoMonto");
-  const fecha = document.getElementById("newIngresoFecha").value || new Date().toISOString().slice(0,10);
+  const fecha = document.getElementById("newIngresoFecha").value || fechaLocalHoy();
   if(!nombre){ toast("Ponle un nombre (ej. Carrera del lunes, Comisión)."); return; }
   if(monto<=0){ toast("El monto debe ser mayor a cero."); return; }
   state.ingresosOcasionales.push({
@@ -4030,7 +4030,7 @@ function importGastosCSV(evt){
 }
 
 async function exportBackupJSON(){
-  const hoy = new Date().toISOString().slice(0,10); // 2026-08-27
+  const hoy = fechaLocalHoy(); // 2026-08-27
   await downloadFile("cuentas_claras_respaldo_"+hoy+".json", JSON.stringify(state, null, 2), "application/json");
   marcarRespaldoHecho();
   renderUltimoRespaldo();
@@ -4468,6 +4468,13 @@ function onMesesDeudaInput(){
 }
 
 /* ===== Helpers de fecha de corte (para saber en qué mes empieza a "contar" una compra) ===== */
+function fechaLocalHoy(){
+  // OJO: nunca usar new Date().toISOString() para "la fecha de hoy" — toISOString() usa UTC,
+  // y Colombia va 5 horas detrás. Eso hacía que la fecha "se adelantara" al día siguiente
+  // desde las 7:00 PM hora local. Esta función sí usa año/mes/día LOCALES del dispositivo.
+  const hoy = new Date();
+  return hoy.getFullYear()+"-"+String(hoy.getMonth()+1).padStart(2,"0")+"-"+String(hoy.getDate()).padStart(2,"0");
+}
 function ccMesActualStr(){
   const hoy = new Date();
   return hoy.getFullYear()+"-"+String(hoy.getMonth()+1).padStart(2,"0");
@@ -4535,7 +4542,7 @@ function recalcularDeuda(d){
   // Sello automático de "pagada": se guarda la fecha la primera vez que llega a $0,
   // y se limpia solo si vuelve a tener saldo (por ejemplo, si agregas una compra nueva).
   if(d.saldo<=0){
-    if(!d.fechaPagada) d.fechaPagada = new Date().toISOString().slice(0,10);
+    if(!d.fechaPagada) d.fechaPagada = fechaLocalHoy();
   } else {
     d.fechaPagada = null;
   }
@@ -4556,7 +4563,7 @@ function agregarMovimientoDeuda(deudaId, {descripcion, valor, cuotas, fecha}){
     cuotaMensual,
     cuotasPagadas: 0,
     tasaAnual: d.tasaAnual || 0,   // hereda la tasa de la tarjeta/deuda, no se vuelve a preguntar
-    fecha: fecha || new Date().toISOString().slice(0,10),
+    fecha: fecha || fechaLocalHoy(),
     primerMes: ccCalcularPrimerMes(fecha, d.diaCorte),
     activo: true
   });
@@ -4816,7 +4823,7 @@ function calcularRendimientoInversion(monto, tasaPct, dias){
   return { bruto, retencion, neto, total };
 }
 function ccInversionVencimiento(inv){
-  const inicio = new Date((inv.fecha||new Date().toISOString().slice(0,10))+"T00:00:00");
+  const inicio = new Date((inv.fecha||fechaLocalHoy())+"T00:00:00");
   return new Date(inicio.getTime() + (inv.plazoDias||0)*86400000);
 }
 function ccInversionDiasRestantes(inv){
@@ -4828,7 +4835,7 @@ function addInversion(){
   const tasa = parseFloat((document.getElementById("invTasa").value||"").replace(",","."))||0;
   const dias = parseInt(document.getElementById("invPlazo").value,10)||0;
   const nombre = document.getElementById("invNombre").value.trim();
-  const fecha = document.getElementById("invFecha").value || new Date().toISOString().slice(0,10);
+  const fecha = document.getElementById("invFecha").value || fechaLocalHoy();
   if(monto<=0 || tasa<=0 || dias<=0){ toast("Completa el monto, la tasa y el plazo."); return; }
   state.inversiones.push({ id: uid(), nombre, monto, tasaAnual: tasa, plazoDias: dias, fecha });
   document.getElementById("invNombre").value = "";
@@ -5209,7 +5216,7 @@ function ccEjecutarAbonoCapital(id){
   const d = state.deudas.find(x=>x.id===id);
   if(!d){ ccCerrarModalAbono(); return; }
   const monto = numFromMasked("abonoDeudaInput_"+id);
-  const fecha = (document.getElementById("abonoFecha_"+id)||{}).value || new Date().toISOString().slice(0,10);
+  const fecha = (document.getElementById("abonoFecha_"+id)||{}).value || fechaLocalHoy();
   const modo = ccModoAbono[id] || "tiempo";
   const r = ccAhorroAbono(d, monto, modo);
 
@@ -5434,7 +5441,7 @@ function renderDeudas(){
              <label style="font-size:11.5px;">Monto del abono</label>
              <input type="text" inputmode="numeric" id="abonoDeudaInput_${d.id}" class="mono-input" placeholder="0" style="margin-bottom:8px;" oninput="ccPreviewAbono('${d.id}')">
              <label style="font-size:11.5px;">Fecha del abono</label>
-             <input type="date" id="abonoFecha_${d.id}" class="mono-input" value="${new Date().toISOString().slice(0,10)}" style="margin-bottom:8px;">
+             <input type="date" id="abonoFecha_${d.id}" class="mono-input" value="${fechaLocalHoy()}" style="margin-bottom:8px;">
              ${d.tasaAnual>0 ? `
              <label style="font-size:11.5px;">¿Qué quieres hacer con el abono?</label>
              <div style="display:flex; gap:8px; margin-bottom:8px;">
@@ -5724,12 +5731,12 @@ function renderAhorrosLigero(){
 function registrarAporteFondoEmergencia(){
   const monto = numFromMasked("feAporteMontoNuevo");
   const fechaInput = document.getElementById("feAporteFechaNueva");
-  const fecha = fechaInput.value || new Date().toISOString().slice(0,10);
+  const fecha = fechaInput.value || fechaLocalHoy();
   if(monto<=0){ toast("Ingresa un monto mayor a cero."); return; }
   state.fondoEmergencia.ahorrado = (state.fondoEmergencia.ahorrado||0) + monto;
   state.fondoEmergencia.historial.push({id:uid(), fecha, monto});
   document.getElementById("feAporteMontoNuevo").value = "";
-  fechaInput.value = new Date().toISOString().slice(0,10);
+  fechaInput.value = fechaLocalHoy();
   saveState();
   renderAhorros();
   renderDashboard();
@@ -6597,6 +6604,29 @@ async function ccReprogramarNativo(){
     }
   });
 
+  // Resumen semanal (real, del celular): cada domingo a las 8:00 PM, si está activado
+  if(ccResumenSemanalActivo()){
+    let cursor = new Date();
+    let contadas = 0, intentos = 0;
+    while(contadas < 8 && intentos < 60 && lista.length < CC_MAX_NOTIFS){
+      intentos++;
+      const candidato = new Date(cursor.getFullYear(), cursor.getMonth(), cursor.getDate(), 20, 0, 0, 0);
+      if(candidato.getDay()===0 && candidato > new Date()){
+        lista.push({
+          id: 900000 + contadas,   // rango propio para el resumen semanal
+          title: "📋 Resumen de tu semana",
+          body: "Toca para ver cuánto llevas registrado esta semana en Cuentas Claras.",
+          channelId: "cc-recordatorios",
+          schedule: { at: candidato, allowWhileIdle: true },
+          smallIcon: "ic_launcher",
+          extra: { tipo: "resumenSemanal" }
+        });
+        contadas++;
+      }
+      cursor.setDate(cursor.getDate()+1);
+    }
+  }
+
   if(!lista.length) return true;
   try{ await LN.schedule({ notifications: lista }); return true; }
   catch(e){ return false; }
@@ -6964,7 +6994,7 @@ function renderAjustes(){
     rsRow.innerHTML = `
       <div style="min-width:0; flex:1;">
         <div class="s-txt">📋 Avisarme cada domingo</div>
-        <div class="s-sub">${rsActivo ? "Activado. Verás cuánto llevas registrado esa semana." : "Apagado. Actívalo si quieres un resumen semanal, sin presión."}</div>
+        <div class="s-sub">${rsActivo ? "Activado. Te llega una notificación cada domingo a las 8:00 PM con cuánto llevas esa semana." : "Apagado. Actívalo para recibir una notificación cada domingo a las 8:00 PM."}</div>
       </div>
       <button class="switch ${rsActivo?"on":""}" style="flex:0 0 auto;" onclick="ccToggleResumenSemanal(${rsActivo?"false":"true"})" aria-label="Activar resumen semanal"></button>`;
   }
@@ -7097,6 +7127,7 @@ function ccResumenSemanalActivo(){
 function ccToggleResumenSemanal(activar){
   try{ localStorage.setItem("cc_resumen_semanal_activo", activar ? "1" : "0"); }catch(e){}
   if(!activar){ const b=document.getElementById("avisoResumenSemanal"); if(b) b.remove(); }
+  ccReprogramarNativoPronto();
   renderAjustes();
 }
 function ccCerrarResumenSemanal(){
@@ -7178,9 +7209,9 @@ function renderAll(){
   renderDonacion();
 }
 
-document.getElementById("gFecha").value = new Date().toISOString().slice(0,10);
-document.getElementById("feAporteFechaNueva").value = new Date().toISOString().slice(0,10);
-document.getElementById("invFecha").value = new Date().toISOString().slice(0,10);
+document.getElementById("gFecha").value = fechaLocalHoy();
+document.getElementById("feAporteFechaNueva").value = fechaLocalHoy();
+document.getElementById("invFecha").value = fechaLocalHoy();
 ["gMonto","dInicial","dSaldo","dPago","feAhorrado","feAporte","feAporteMontoNuevo","mObjetivo","mAhorrado","newIngresoMonto","invMonto","c4Monto","credMonto","existValor"].forEach(id=>{
   const el = document.getElementById(id);
   if(el) maskMiles(el);
