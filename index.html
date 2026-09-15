@@ -268,8 +268,8 @@
   input[type=date]{padding-right:8px; letter-spacing:-.2px;}
   .cc-seccion{font-size:11px; font-weight:700; letter-spacing:.04em; color:var(--ink-mute); text-transform:uppercase; margin:16px 0 10px; padding-top:14px; border-top:1px solid var(--line-soft);}
   .cc-seccion:first-child{margin-top:0; padding-top:0; border-top:none;}
-  .cc-colapsable{width:100%; display:flex; justify-content:space-between; align-items:center; gap:8px; background:var(--brand-soft); border:1.5px solid #BFE9DA; border-radius:12px; padding:14px 16px; font-size:14.5px; font-weight:800; color:var(--brand-dark); cursor:pointer; margin-top:4px;}
-  .cc-colapsable span:last-child{font-size:16px; flex:0 0 auto;}
+  .cc-colapsable{width:100%; display:flex; justify-content:space-between; align-items:center; gap:8px; background:var(--brand-soft); border:2px solid #8FDABF; border-radius:14px; padding:18px 18px; font-size:16px; font-weight:800; color:var(--brand-dark); cursor:pointer; margin-top:4px;}
+  .cc-colapsable span:last-child{font-size:19px; flex:0 0 auto;}
   .money-mask::placeholder{ color:#B7C2BB; opacity:1; }
   .field-row{display:flex; gap:10px;}
   .field-row > div{flex:1; min-width:0;}
@@ -388,11 +388,12 @@
   .fijo-row .s-txt{ font-size:13.5px; font-weight:700; }
   .fijo-row .s-sub{ font-size:11.5px; color:var(--ink-soft); margin-top:2px; }
   .r-del{
-    background:transparent; border:none; color:var(--red); font-size:19px; line-height:1;
-    padding:6px 9px; border-radius:8px; cursor:pointer; transition:background .15s;
+    background:transparent; border:none; color:var(--red); font-size:26px; line-height:1;
+    padding:10px 14px; border-radius:10px; cursor:pointer; transition:background .15s;
+    min-width:44px; min-height:44px; display:inline-flex; align-items:center; justify-content:center;
   }
   .r-del:active{ background:var(--red-soft); }
-  .r-del.confirm{ background:var(--red); color:#fff; font-size:11.5px; font-weight:700; padding:6px 11px; white-space:nowrap; }
+  .r-del.confirm{ background:var(--red); color:#fff; font-size:13.5px; font-weight:700; padding:10px 16px; white-space:nowrap; }
   .r-del.confirm:active{ background:var(--red); opacity:.85; }
   .receipt .r-del{color:var(--ink-mute);}
   .receipt .r-del:active{ background:var(--red-soft); color:var(--red); }
@@ -690,7 +691,7 @@
           </div>
         </div>
         <div id="ingresosList" style="margin-top:10px;"></div>
-        <button class="add-row-btn" onclick="toggleAddIngreso()" style="margin-top:10px;">+ Agregar ingreso ocasional</button>
+        <button class="add-row-btn" onclick="toggleAddIngreso()" style="margin-top:10px;">+ Agregar ingreso adicional</button>
         <div class="edit-panel" id="addIngresoPanel" style="display:none; margin-top:10px;">
           <label>Descripción</label>
           <input type="text" id="newIngresoNombre" placeholder="Ej: Carrera del lunes, Comisión, Domicilio">
@@ -891,11 +892,11 @@
         <div style="font-size:11.5px; opacity:.8; margin-top:8px;">¿No tienes deudas? También puedes seguir directo.</div>
       </div>
       <div style="display:flex; gap:8px; margin-bottom:14px;">
-        <button type="button" id="btnModoNuevaDeuda" class="btn-modo-abono activo" style="flex:1;" onclick="ccSetModoDeudaForm('nueva')">+ Nueva deuda</button>
-        <button type="button" id="btnModoDeudaExistente" class="btn-modo-abono" style="flex:1;" onclick="ccSetModoDeudaForm('existente')">+ Agregar a existente</button>
+        <button type="button" id="btnModoNuevaDeuda" class="btn-modo-abono" style="flex:1; padding:16px 10px; font-size:15px; border-color:var(--brand);" onclick="ccSetModoDeudaForm('nueva')">+ Nueva deuda</button>
+        <button type="button" id="btnModoDeudaExistente" class="btn-modo-abono" style="flex:1; padding:16px 10px; font-size:15px; border-color:var(--brand);" onclick="ccSetModoDeudaForm('existente')">+ Agregar a existente</button>
       </div>
 
-      <div id="panelNuevaDeuda">
+      <div id="panelNuevaDeuda" style="display:none;">
       <h2 class="section-title" style="margin-top:0;">Nueva deuda<div class="rule"></div></h2>
       <div class="card">
         <div class="cc-seccion">Detalles de la deuda</div>
@@ -912,8 +913,8 @@
         <label>% de interés anual que te cobran (opcional)</label>
         <input type="text" inputmode="decimal" id="dTasa" class="mono-input" placeholder="Ej: 24">
 
-        <label style="display:flex; align-items:center; gap:8px; margin-top:14px; text-transform:none; letter-spacing:0; font-weight:600; color:var(--ink);">
-          <input type="checkbox" id="dTieneManejo" style="width:auto;" onchange="document.getElementById('dManejoBody').style.display=this.checked?'block':'none'; if(!this.checked) document.getElementById('dManejoValor').value='';">
+        <label style="display:flex; align-items:center; gap:12px; margin-top:14px; padding:12px 14px; background:var(--surface-2); border:1px solid var(--line); border-radius:11px; text-transform:none; letter-spacing:0; font-weight:600; color:var(--ink); cursor:pointer;">
+          <input type="checkbox" id="dTieneManejo" style="width:26px; height:26px; flex:0 0 auto; accent-color:var(--brand-dark);" onchange="document.getElementById('dManejoBody').style.display=this.checked?'block':'none'; if(!this.checked) document.getElementById('dManejoValor').value='';">
           💳 ¿Tiene cuota de manejo?
         </label>
         <div id="dManejoBody" style="display:none; padding-top:2px;">
@@ -2334,6 +2335,9 @@ function aniosConDatos(){
    ===================================================================== */
 let ccVistaActual = "inicio";
 function showView(name){
+  // Si sales de Deudas, los formularios de "Nueva deuda"/"Agregar a existente" se
+  // cierran solos — así no quedan desplegados la próxima vez que entres a la pestaña.
+  if(name !== "deudas" && typeof modoDeudaFormAbierto !== "undefined") modoDeudaFormAbierto = null;
   document.querySelectorAll(".view").forEach(v=>v.classList.remove("active"));
   const target = document.getElementById("view-"+name);
   if(target) target.classList.add("active");
@@ -2898,13 +2902,53 @@ function recalcularIngreso(){
 
 /* --- Ingreso principal --- */
 let editandoPrincipal = false;
-function togglePrincipalEdit(){ editandoPrincipal = !editandoPrincipal; renderIngresos(); }
+let principalFrecEdit = "mensual";
+function togglePrincipalEdit(){
+  editandoPrincipal = !editandoPrincipal;
+  if(editandoPrincipal) principalFrecEdit = state.ingresoPrincipal.frecuencia || "mensual";
+  renderIngresos();
+}
+function ccSetFrecuenciaPrincipal(freq){
+  principalFrecEdit = freq;
+  renderIngresos();
+}
 function savePrincipal(){
-  const monto = numFromMasked("edPrincipalMonto");
-  if(monto<0){ toast("El monto no puede ser negativo."); return; }
-  state.ingresoPrincipal.monto = monto;
+  if(principalFrecEdit === "quincenal"){
+    const q1 = numFromMasked("edPrincipalQ1");
+    const q2 = numFromMasked("edPrincipalQ2");
+    if(q1<0 || q2<0){ toast("El monto no puede ser negativo."); return; }
+    state.ingresoPrincipal.monto = q1+q2;
+    state.ingresoPrincipal.frecuencia = "quincenal";
+    state.ingresoPrincipal.montoQ1 = q1;
+    state.ingresoPrincipal.montoQ2 = q2;
+  } else {
+    const monto = numFromMasked("edPrincipalMonto");
+    if(monto<0){ toast("El monto no puede ser negativo."); return; }
+    state.ingresoPrincipal.monto = monto;
+    state.ingresoPrincipal.frecuencia = "mensual";
+  }
   state.ingresoPrincipal.esEjemplo = false;   // ya lo tocó, deja de ser ejemplo
   editandoPrincipal = false;
+  ["edPrincipalMonto","edPrincipalQ1","edPrincipalQ2"].forEach(ccDraftClear);
+  recalcularIngreso();
+  saveState(); renderAll();
+  toast("Ingreso principal actualizado");
+}
+function ccCancelarEdicionPrincipal(){
+  ["edPrincipalMonto","edPrincipalQ1","edPrincipalQ2"].forEach(ccDraftClear);
+  togglePrincipalEdit();
+}
+/* Actualiza Q1/Q2 directo, sin pasar por el formulario completo de "Cambiar ingreso principal". */
+function ccGuardarQuincenaRapido(){
+  const q1 = numFromMasked("rapQ1");
+  const q2 = numFromMasked("rapQ2");
+  if(q1<0 || q2<0){ toast("El monto no puede ser negativo."); return; }
+  state.ingresoPrincipal.montoQ1 = q1;
+  state.ingresoPrincipal.montoQ2 = q2;
+  state.ingresoPrincipal.monto = q1+q2;
+  state.ingresoPrincipal.frecuencia = "quincenal";
+  state.ingresoPrincipal.esEjemplo = false;
+  ["rapQ1","rapQ2"].forEach(ccDraftClear);
   recalcularIngreso();
   saveState(); renderAll();
   toast("Ingreso principal actualizado");
@@ -2981,7 +3025,7 @@ function renderIngresos(){
       <div class="grupo-ing-head" onclick="toggleVerPrincipal()">
         <div>
           <div class="s-txt">Ingreso principal</div>
-          <div class="s-sub">Fijo todos los meses</div>
+          <div class="s-sub">${p.frecuencia==="quincenal" ? `Quincenal: Q1 ${money(p.montoQ1||0)} + Q2 ${money(p.montoQ2||0)}` : "Fijo todos los meses"}</div>
         </div>
         <div style="display:flex; align-items:center; gap:8px;">
           <span class="r-amount" style="color:var(--brand-dark);">${money(p.monto||0)}</span>
@@ -2991,12 +3035,35 @@ function renderIngresos(){
   if(mostrarPrincipalBloque){
     if(editandoPrincipal){
       html += `<div class="edit-panel" style="margin-top:8px;">
-        <label>Monto del ingreso principal</label>
-        <input type="text" inputmode="numeric" id="edPrincipalMonto" class="mono-input" value="${(p.monto||0).toLocaleString('es-CO')}">
+        <label>¿Cómo recibes tu ingreso principal?</label>
+        <div style="display:flex; gap:8px; margin-bottom:10px;">
+          <button type="button" class="btn-modo-abono ${principalFrecEdit==="mensual"?"activo":""}" style="flex:1;" onclick="ccSetFrecuenciaPrincipal('mensual')">Mes</button>
+          <button type="button" class="btn-modo-abono ${principalFrecEdit==="quincenal"?"activo":""}" style="flex:1;" onclick="ccSetFrecuenciaPrincipal('quincenal')">Quincena</button>
+        </div>
+        ${principalFrecEdit==="quincenal" ? `
+        <label>Quincena 1</label>
+        <input type="text" inputmode="numeric" id="edPrincipalQ1" class="mono-input" value="${ccDraftGet('edPrincipalQ1', (p.montoQ1||0).toLocaleString('es-CO'))}" oninput="ccDraft(this)">
+        <label>Quincena 2</label>
+        <input type="text" inputmode="numeric" id="edPrincipalQ2" class="mono-input" value="${ccDraftGet('edPrincipalQ2', (p.montoQ2||0).toLocaleString('es-CO'))}" oninput="ccDraft(this)">
+        ` : `
+        <label>Monto del ingreso principal (mensual)</label>
+        <input type="text" inputmode="numeric" id="edPrincipalMonto" class="mono-input" value="${ccDraftGet('edPrincipalMonto', (p.monto||0).toLocaleString('es-CO'))}" oninput="ccDraft(this)">
+        `}
         <div class="edit-actions">
           <button class="btn-primary" style="margin:0;" onclick="savePrincipal()">Guardar</button>
-          <button class="btn-ghost" style="margin:0;" onclick="togglePrincipalEdit()">Cancelar</button>
+          <button class="btn-ghost" style="margin:0;" onclick="ccCancelarEdicionPrincipal()">Cancelar</button>
         </div>
+      </div>`;
+    } else if(p.frecuencia==="quincenal"){
+      // En quincena, los 2 campos quedan siempre listos para escribir, sin tener que
+      // reabrir el formulario completo cada vez que llega la segunda quincena.
+      html += `<div style="padding:8px 2px 2px;">
+        <label>Quincena 1</label>
+        <input type="text" inputmode="numeric" id="rapQ1" class="mono-input" value="${ccDraftGet('rapQ1',(p.montoQ1||0).toLocaleString('es-CO'))}" oninput="ccDraft(this)">
+        <label>Quincena 2</label>
+        <input type="text" inputmode="numeric" id="rapQ2" class="mono-input" value="${ccDraftGet('rapQ2',(p.montoQ2||0).toLocaleString('es-CO'))}" oninput="ccDraft(this)">
+        <button class="btn-primary" style="width:100%; margin-top:10px;" onclick="ccGuardarQuincenaRapido()">Guardar</button>
+        <button class="btn-ghost" style="width:100%; margin-top:6px;" onclick="togglePrincipalEdit()">Cambiar a ingreso mensual</button>
       </div>`;
     } else {
       html += `<div style="padding:8px 2px;">
@@ -3011,7 +3078,7 @@ function renderIngresos(){
     <div class="grupo-ing" style="margin-top:10px;">
       <div class="grupo-ing-head" onclick="toggleVerOcasionales()">
         <div>
-          <div class="s-txt">Ingresos ocasionales de ${state.mesActivo}</div>
+          <div class="s-txt">Ingresos adicionales de ${state.mesActivo}</div>
           <div class="s-sub">${ocas.length} este mes</div>
         </div>
         <div style="display:flex; align-items:center; gap:8px;">
@@ -3051,7 +3118,12 @@ function renderIngresos(){
 
   box.innerHTML = html;
 
-  if(editandoPrincipal){ const el=document.getElementById("edPrincipalMonto"); if(el) maskMiles(el); }
+  if(editandoPrincipal){
+    const elM=document.getElementById("edPrincipalMonto"); if(elM) maskMiles(elM);
+    const elQ1=document.getElementById("edPrincipalQ1"); if(elQ1) maskMiles(elQ1);
+    const elQ2=document.getElementById("edPrincipalQ2"); if(elQ2) maskMiles(elQ2);
+  }
+  { const r1=document.getElementById("rapQ1"); if(r1) maskMiles(r1); const r2=document.getElementById("rapQ2"); if(r2) maskMiles(r2); }
   ocas.forEach(i=>{ const el=document.getElementById("edIngM_"+i.id); if(el) maskMiles(el); });
 
   // Aviso "es un ejemplo": solo si el principal sigue siendo el predeterminado
@@ -3552,6 +3624,14 @@ function addGasto(){
   toast("Gasto registrado ✓");
 }
 
+/* Guarda lo que la persona ya escribió en un campo, para que sobreviva si la sección
+   se vuelve a dibujar (cambio de pestaña, otra acción que dispare un refresco, etc.)
+   antes de que confirme el valor con su botón correspondiente. */
+let ccDraftVals = {};
+function ccDraft(el){ if(el && el.id) ccDraftVals[el.id] = el.value; }
+function ccDraftGet(id, fallback){ return (ccDraftVals[id]!==undefined) ? ccDraftVals[id] : fallback; }
+function ccDraftClear(id){ delete ccDraftVals[id]; }
+
 /* ===== Registrar pago de deudas desde Gastos (Etapa 2) ===== */
 let verPagoDeudas = false;
 function toggleVerPagoDeudas(){
@@ -3590,17 +3670,42 @@ function renderPagoDeudas(){
           </div>
         </div>
         ${yaPago
-          ? `<div class="s-sub" style="color:var(--brand-dark); font-weight:600; margin-top:6px;">✓ Pagaste ${money(yaPago.monto)} este mes
-               <button class="btn-ghost" style="margin:6px 0 0; padding:6px 10px; font-size:12px;" onclick="deshacerPagoDeuda('${yaPago.id}','${d.id}')">Deshacer</button>
+          ? `<div style="margin-top:8px; padding:12px; background:var(--brand-soft); border-radius:11px;">
+               <div class="s-sub" style="color:var(--brand-dark); font-weight:700; font-size:14px;">✓ Pagaste ${money(yaPago.monto)} este mes</div>
+               <button class="btn-outline" style="width:100%; margin-top:8px; padding:12px;" onclick="ccEditarPagoDeuda('${yaPago.id}','${d.id}')">✏️ Editar este pago</button>
              </div>`
           : `<div style="margin-top:8px;">
-               <input type="text" inputmode="numeric" id="pagoDeudaInput_${d.id}" class="mono-input" placeholder="${sugerido? money(sugerido).replace('$','') : 'Escribe el monto'}" style="width:100%; font-size:17px; padding:14px; text-align:center; margin-bottom:8px;" oninput="ccPreviewPagoDeuda('${d.id}')">
+               <input type="text" inputmode="numeric" id="pagoDeudaInput_${d.id}" class="mono-input" value="${ccDraftGet('pagoDeudaInput_'+d.id,'')}" placeholder="${sugerido? money(sugerido).replace('$','') : 'Escribe el monto'}" style="width:100%; font-size:17px; padding:14px; text-align:center; margin-bottom:8px;" oninput="ccDraft(this); ccPreviewPagoDeuda('${d.id}')">
                <button class="btn-primary" style="margin:0; width:100%;" onclick="registrarPagoDeuda('${d.id}')">Registrar pago</button>
              </div>
              <div class="hint" id="pagoDeudaPreview_${d.id}" style="margin-top:6px;"></div>`}
+        ${(() => {
+          const activos = (d.movimientos||[]).filter(m=>(m.saldo||0)>0);
+          if(activos.length<=1) return "";
+          const abierto = verMovEspecifico===d.id;
+          return `
+          <button type="button" class="cc-colapsable" style="margin-top:10px;" onclick="ccToggleMovEspecifico('${d.id}')">
+            <span>¿Pagar un movimiento en específico?</span><span>${abierto?"▴":"▾"}</span>
+          </button>
+          ${abierto ? `<div style="margin-top:8px;">
+            <select id="selMovEspecifico_${d.id}" class="mono-input" onchange="ccSeleccionarMovEspecifico(this.value)">
+              <option value="">Selecciona un movimiento...</option>
+              ${activos.map(m=>`<option value="${m.id}" ${pagandoMovimientoId===m.id?"selected":""}>${m.tipo==="avance"?"💵 ":""}${esc(m.descripcion||"Compra")} — ${money(m.saldo)}</option>`).join("")}
+            </select>
+            ${pagandoMovimientoId && activos.some(m=>m.id===pagandoMovimientoId) ? (() => {
+              const m = activos.find(x=>x.id===pagandoMovimientoId);
+              return `<div style="margin-top:8px; padding:10px 12px; background:var(--surface-2); border-radius:10px;">
+                <div class="hint" style="margin-bottom:8px;">Vas a pagar SOLO "<b>${esc(m.descripcion||"este movimiento")}</b>" (saldo: ${money(m.saldo)}), sin afectar los demás movimientos de ${esc(d.nombre)}.</div>
+                <input type="text" inputmode="numeric" id="pagoMovInput_${m.id}" class="mono-input" value="${ccDraftGet('pagoMovInput_'+m.id,'')}" placeholder="0" style="margin-bottom:8px;" oninput="ccDraft(this)">
+                <button class="btn-primary" style="margin:0; width:100%;" onclick="ccPagarMovimientoEspecifico('${d.id}','${m.id}')">Confirmar pago de este movimiento</button>
+              </div>`;
+            })() : ""}
+          </div>` : ""}`;
+        })()}
       </div>`;
     }).join("");
   deudas.forEach(d=>{ const el=document.getElementById("pagoDeudaInput_"+d.id); if(el) maskMiles(el); });
+  if(pagandoMovimientoId){ const elM=document.getElementById("pagoMovInput_"+pagandoMovimientoId); if(elM) maskMiles(elM); }
 }
 
 function ccPreviewPagoDeuda(id){
@@ -3657,6 +3762,7 @@ function registrarPagoDeuda(id){
     rubro: "Pago de deuda: "+d.nombre, monto: monto, nota: "Pago de deuda",
     origenDeuda: d.id
   });
+  ccDraftClear("pagoDeudaInput_"+id);
 
   saveState();
   renderPagoDeudas();
@@ -3691,6 +3797,21 @@ function deshacerPagoDeuda(gastoId, deudaId){
   renderDeudas();
   renderDashboard();
   toast("Pago deshecho");
+}
+
+/* "Editar este pago": deshace el pago del mes y deja el monto anterior listo para ajustar,
+   en vez de solo borrarlo sin más (usa por dentro el mismo deshacerPagoDeuda). */
+function ccEditarPagoDeuda(gastoId, deudaId){
+  const g = state.gastos.find(x=>x.id===gastoId);
+  const montoPrevio = g ? g.monto : 0;
+  deshacerPagoDeuda(gastoId, deudaId);
+  const el = document.getElementById("pagoDeudaInput_"+deudaId);
+  if(el){
+    el.value = montoPrevio ? montoPrevio.toLocaleString("es-CO") : "";
+    ccDraft(el);
+    ccPreviewPagoDeuda(deudaId);
+    el.focus();
+  }
 }
 
 function deleteGasto(id){
@@ -4099,7 +4220,7 @@ function importBackupJSON(evt){
     const nD = (data.deudas||[]).length;
     const nM = (data.metas||[]).length;
     const nOc = (data.ingresosOcasionales||data.ingresos||[]).length;
-    const resumen = `Este respaldo tiene:\n· ${nG} gasto(s)\n· ${nD} deuda(s)\n· ${nM} meta(s)\n· ${nOc} ingreso(s) ocasional(es)\n\n¿Reemplazar tus datos actuales con este respaldo?`;
+    const resumen = `Este respaldo tiene:\n· ${nG} gasto(s)\n· ${nD} deuda(s)\n· ${nM} meta(s)\n· ${nOc} ingreso(s) adicional(es)\n\n¿Reemplazar tus datos actuales con este respaldo?`;
     if(!confirm(resumen)){ evt.target.value = ""; return; }
     try{
       state = hidratar(data, defaultState());
@@ -4653,14 +4774,19 @@ function ccToggleColapsable(bodyId, chevId){
   if(chev) chev.textContent = abierto ? "▾" : "▴";
 }
 
-/* Cambia entre el formulario de "Nueva deuda" y el de "Agregar a existente" */
+/* Cambia entre el formulario de "Nueva deuda" y el de "Agregar a existente".
+   Funciona como acordeón: si tocas el que ya está abierto, se cierra; los dos
+   empiezan ocultos para no saturar la pantalla con las deudas ya agregadas. */
+let modoDeudaFormAbierto = null;
 function ccSetModoDeudaForm(modo){
-  const esNueva = modo==="nueva";
-  document.getElementById("panelNuevaDeuda").style.display = esNueva ? "" : "none";
-  document.getElementById("panelDeudaExistente").style.display = esNueva ? "none" : "";
-  document.getElementById("btnModoNuevaDeuda").classList.toggle("activo", esNueva);
-  document.getElementById("btnModoDeudaExistente").classList.toggle("activo", !esNueva);
-  if(!esNueva){ poblarSelectDeudaExistente(); ccSetTipoMovimiento("compra"); }
+  modoDeudaFormAbierto = (modoDeudaFormAbierto===modo) ? null : modo;
+  const mostrarNueva = modoDeudaFormAbierto==="nueva";
+  const mostrarExistente = modoDeudaFormAbierto==="existente";
+  document.getElementById("panelNuevaDeuda").style.display = mostrarNueva ? "" : "none";
+  document.getElementById("panelDeudaExistente").style.display = mostrarExistente ? "" : "none";
+  document.getElementById("btnModoNuevaDeuda").classList.toggle("activo", mostrarNueva);
+  document.getElementById("btnModoDeudaExistente").classList.toggle("activo", mostrarExistente);
+  if(mostrarExistente){ poblarSelectDeudaExistente(); ccSetTipoMovimiento("compra"); }
 }
 
 let existTipoMovimiento = "compra";
@@ -5450,12 +5576,50 @@ function toggleVerMovimientos(id){
   renderDeudas();
 }
 
-/* Pago dirigido a UN movimiento en específico (ej. pagar solo el avance, no toda la tarjeta) */
-let pagandoMovimientoId = null;
-function ccTogglePagoMovimiento(movId){
-  pagandoMovimientoId = (pagandoMovimientoId===movId) ? null : movId;
+/* Pago dirigido a UN movimiento en específico (ej. pagar solo el avance, no toda la tarjeta).
+   Vive en la pestaña Gastos, junto al resto de pagos, para no duplicar la lógica. */
+let verMovEspecifico = null;   // id de la deuda cuyo desplegable de movimientos está abierto
+let pagandoMovimientoId = null; // id del movimiento elegido dentro de ese desplegable
+
+/* Elimina un movimiento (compra o avance) que se agregó por error, sin afectar los demás. */
+function eliminarMovimiento(deudaId, movId){
+  const d = state.deudas.find(x=>x.id===deudaId);
+  if(!d) return;
+  d.movimientos = (d.movimientos||[]).filter(m=>m.id!==movId);
+  recalcularDeuda(d);
+  saveState();
   renderDeudas();
+  renderDashboard();
+  toast("Movimiento eliminado");
 }
+
+/* Desde "Ver movimientos" en Deudas, lleva a Gastos ya listo para pagar ESE movimiento. */
+function irAPagarMovimiento(deudaId, movId){
+  showView("gastos");
+  verPagoDeudas = true;
+  verMovEspecifico = deudaId;
+  pagandoMovimientoId = movId;
+  const box = document.getElementById("pagoDeudasList");
+  if(box) box.style.display = "block";
+  const chev = document.getElementById("chevPagoDeudas");
+  if(chev) chev.textContent = "▲";
+  renderPagoDeudas();
+  setTimeout(()=>{
+    const head = document.getElementById("pagoDeudasHead");
+    if(head) head.scrollIntoView({behavior:"smooth", block:"start"});
+  }, 60);
+}
+
+function ccToggleMovEspecifico(deudaId){
+  verMovEspecifico = (verMovEspecifico===deudaId) ? null : deudaId;
+  pagandoMovimientoId = null;
+  renderPagoDeudas();
+}
+function ccSeleccionarMovEspecifico(movId){
+  pagandoMovimientoId = movId || null;
+  renderPagoDeudas();
+}
+
 function ccPagarMovimientoEspecifico(deudaId, movId){
   const d = state.deudas.find(x=>x.id===deudaId);
   if(!d) return;
@@ -5476,9 +5640,12 @@ function ccPagarMovimientoEspecifico(deudaId, movId){
     nota: "Pago: "+(m.descripcion||(m.tipo==="avance"?"Avance en efectivo":"Compra")),
     origenDeuda: d.id, origenMovimiento: m.id
   });
+  verMovEspecifico = null;
   pagandoMovimientoId = null;
+  ccDraftClear("pagoMovInput_"+movId);
   saveState();
   renderGastos();
+  renderPagoDeudas();
   renderDeudas();
   renderDashboard();
   toast("Pago de "+money(aplicado)+" aplicado a "+(m.descripcion||"ese movimiento"));
@@ -5505,8 +5672,8 @@ function renderDeudas(){
         <input type="text" inputmode="numeric" id="edP_${d.id}" class="mono-input" value="${(d.pago-(d.cuotaManejoActiva?d.cuotaManejoValor||0:0)).toLocaleString('es-CO')}">
         <label>% de interés anual (opcional)</label>
         <input type="text" inputmode="decimal" id="edT_${d.id}" class="mono-input" value="${d.tasaAnual||""}">
-        <label style="display:flex; align-items:center; gap:8px; margin-top:14px; text-transform:none; letter-spacing:0; font-weight:600; color:var(--ink);">
-          <input type="checkbox" id="edTieneManejo_${d.id}" style="width:auto;" ${d.cuotaManejoActiva?"checked":""} onchange="document.getElementById('edManejoBody_${d.id}').style.display=this.checked?'block':'none';">
+        <label style="display:flex; align-items:center; gap:12px; margin-top:14px; padding:12px 14px; background:var(--surface-2); border:1px solid var(--line); border-radius:11px; text-transform:none; letter-spacing:0; font-weight:600; color:var(--ink); cursor:pointer;">
+          <input type="checkbox" id="edTieneManejo_${d.id}" style="width:26px; height:26px; flex:0 0 auto; accent-color:var(--brand-dark);" ${d.cuotaManejoActiva?"checked":""} onchange="document.getElementById('edManejoBody_${d.id}').style.display=this.checked?'block':'none';">
           💳 ¿Tiene cuota de manejo?
         </label>
         <div id="edManejoBody_${d.id}" style="display:${d.cuotaManejoActiva?"block":"none"}; padding-top:2px;">
@@ -5587,28 +5754,31 @@ function renderDeudas(){
         <div class="bar-label"><span style="color:#C9701F;">Saldo: ${money(d.saldo)}</span><span>${pct(pctPagado)} pagado</span></div>
         <div class="bar-track"><div class="bar-fill ${barClass}" style="width:${pctPagado}%"></div></div>
       </div>
-      ${Array.isArray(d.movimientos) && d.movimientos.length>1 ? `
+      ${(() => {
+        const activos = (d.movimientos||[]).filter(m=>(m.saldo||0)>0);
+        if(activos.length<=1) return "";
+        return `
       <button type="button" class="cc-colapsable" style="margin-bottom:10px;" onclick="event.stopPropagation(); toggleVerMovimientos('${d.id}')">
-        <span>Ver movimientos (${d.movimientos.length})</span><span>${verMovimientosSet.has(d.id)?"▴":"▾"}</span>
+        <span>Ver movimientos (${activos.length})</span><span>${verMovimientosSet.has(d.id)?"▴":"▾"}</span>
       </button>
       ${verMovimientosSet.has(d.id) ? `<div onclick="event.stopPropagation();" style="margin-bottom:10px;">
-        ${d.movimientos.map(m=>`<div style="padding:9px 4px; border-bottom:1px solid var(--line-soft);">
+        ${activos.map(m=>`<div style="padding:9px 4px; border-bottom:1px solid var(--line-soft);">
           <div style="display:flex; justify-content:space-between; align-items:center; gap:10px; flex-wrap:wrap;">
             <div style="min-width:0;">
               <div style="font-size:13px; font-weight:600;">${m.tipo==="avance"?"💵 ":""}${esc(m.descripcion||"Compra")}</div>
-              <div class="hint" style="margin-top:1px;">${m.tipo==="avance" ? "Avance en efectivo"+((m.interesGenerado||0)>0?` · interés generado: ${money(m.interesGenerado)}`:"") : (m.cuotas>0 ? m.cuotas+" cuotas" : "1 pago")}${m.fecha ? " · desde "+m.fecha : ""}${(m.saldo||0)<=0 ? " · pagado" : ""}</div>
+              <div class="hint" style="margin-top:1px;">${m.tipo==="avance" ? "Avance en efectivo"+((m.interesGenerado||0)>0?` · interés generado: ${money(m.interesGenerado)}`:"") : (m.cuotas>0 ? m.cuotas+" cuotas" : "1 pago")}${m.fecha ? " · desde "+m.fecha : ""}</div>
             </div>
-            <div style="display:flex; align-items:center; gap:8px;">
+            <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
               <div style="font-family:var(--font-mono); font-size:13px;">${money(m.saldo)}</div>
-              ${(m.saldo||0)>0 ? `<button type="button" onclick="event.stopPropagation(); ccTogglePagoMovimiento('${m.id}')" style="font-size:11px; font-weight:700; color:var(--brand-dark); background:var(--brand-soft); border:none; border-radius:8px; padding:6px 10px;">💰 Pagar</button>` : ""}
+              <button type="button" onclick="event.stopPropagation(); irAPagarMovimiento('${d.id}','${m.id}')" style="font-size:12.5px; font-weight:700; color:var(--brand-dark); background:var(--brand-soft); border:none; border-radius:10px; padding:11px 14px; min-height:44px;">💰 Pagar</button>
+              ${esPendiente("movimiento:"+m.id)
+                ? `<button type="button" onclick="event.stopPropagation(); eliminarMovimiento('${d.id}','${m.id}')" style="font-size:13px; font-weight:700; color:#fff; background:#C0392B; border:none; border-radius:10px; padding:11px 14px; min-height:44px;">✓ Eliminar</button>`
+                : `<button type="button" onclick="event.stopPropagation(); pideConfirmar('movimiento:${m.id}', renderDeudas)" aria-label="Eliminar movimiento" style="font-size:20px; color:#C0392B; background:none; border:none; padding:10px 12px; min-width:44px; min-height:44px;">🗑</button>`}
             </div>
           </div>
-          ${pagandoMovimientoId===m.id ? `<div onclick="event.stopPropagation();" style="margin-top:8px; display:flex; gap:6px; flex-wrap:wrap;">
-            <input type="text" inputmode="numeric" id="pagoMovInput_${m.id}" class="mono-input" placeholder="0" style="flex:1; min-width:100px;">
-            <button type="button" class="btn-primary" style="margin-top:0; padding:0 16px;" onclick="event.stopPropagation(); ccPagarMovimientoEspecifico('${d.id}','${m.id}')">Confirmar</button>
-          </div>` : ""}
         </div>`).join("")}
-      </div>` : ""}` : ""}
+      </div>` : ""}`;
+      })()}
       ${abonandoDeudaId===d.id
         ? `<div onclick="event.stopPropagation();" style="background:var(--surface-2); border:1px solid var(--line); border-radius:12px; padding:12px; margin-top:4px;">
              <div style="font-size:12.5px; font-weight:700; color:var(--brand-dark); margin-bottom:8px;">💰 Abono directo a capital</div>
