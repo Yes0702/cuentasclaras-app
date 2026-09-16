@@ -791,9 +791,9 @@
         </div>
         <label>Rubro</label>
         <input type="hidden" id="gRubro">
-        <button type="button" id="gRubroBtn" onclick="ccAbrirPickerRubro()" style="width:100%; text-align:left; display:flex; align-items:center; justify-content:space-between; gap:8px; background:var(--surface-2); border:1px solid var(--line); border-radius:11px; padding:11px 12px; font-size:14.5px; font-weight:500; color:var(--ink); cursor:pointer;">
+        <button type="button" id="gRubroBtn" onclick="ccAbrirPickerRubro()" style="width:100%; text-align:left; display:flex; align-items:center; justify-content:space-between; gap:8px; background:var(--brand-soft); border:1.5px solid #8FDABF; border-radius:12px; padding:16px 16px; font-size:16.5px; font-weight:700; color:var(--brand-dark); cursor:pointer;">
           <span id="gRubroBtnTxt">Elegir rubro…</span>
-          <span style="color:var(--ink-mute);">▾</span>
+          <span style="color:var(--brand-dark); font-size:20px;">▾</span>
         </button>
         <div class="field-row">
           <div><label>Monto</label><input type="text" inputmode="numeric" id="gMonto" class="mono-input" placeholder="0"></div>
@@ -4110,6 +4110,11 @@ function renderGastos(){
     const ocultos = list.length - visibles.length;
 
     let html = `<div class="hint" style="margin:-4px 2px 10px;">${list.length} movimiento${list.length===1?"":"s"} · total <b style="font-family:var(--font-mono); color:var(--ink);">${money(total)}</b></div>`;
+    if(verTodosGastos && !hayEdicion && list.length>MOSTRAR){
+      html += `<div style="position:sticky; top:0; z-index:5; background:var(--bg); padding-bottom:10px; margin-top:-2px;">
+        <button class="btn-primary" style="margin:0; width:100%;" onclick="verTodosGastos=false; renderGastos();">▴ Ver menos</button>
+      </div>`;
+    }
     html += visibles.map(g=>pintarGasto(g)).join("");
 
     if(ocultos > 0 && !verTodosGastos && !hayEdicion){
@@ -4605,7 +4610,31 @@ function colName(i){
   while(i>0){ const r = (i-1)%26; s = String.fromCharCode(65+r)+s; i = Math.floor((i-1)/26); }
   return s;
 }
-function sheetXML(rows){
+/* Calcula un ancho razonable por columna según el contenido más largo que tenga,
+   para que Excel no muestre las casillas cortadas y no haya que ajustarlas a mano. */
+function calcularAnchoColumnas(rows){
+  const anchos = [];
+  rows.forEach(row=>{
+    row.forEach((val,ci)=>{
+      let texto;
+      if(val===null || val===undefined || val==="") texto = "";
+      else if(typeof val === "number" && isFinite(val)) texto = val.toLocaleString("es-CO");
+      else texto = String(val);
+      anchos[ci] = Math.max(anchos[ci]||0, texto.length);
+    });
+  });
+  return anchos.map(w => Math.min(45, Math.max(9, (w||0)+3)));
+}
+function sheetXML(rows, conFiltro){
+  const numCols = rows.reduce((m,r)=>Math.max(m, r.length), 0);
+  const numRows = rows.length;
+  const anchos = calcularAnchoColumnas(rows);
+  const colsXml = (numCols>0)
+    ? `<cols>${anchos.map((w,i)=>`<col min="${i+1}" max="${i+1}" width="${w}" customWidth="1"/>`).join("")}</cols>`
+    : "";
+  const autoFilterXml = (conFiltro && numCols>0 && numRows>0)
+    ? `<autoFilter ref="A1:${colName(numCols-1)}${numRows}"/>`
+    : "";
   const body = rows.map((row,ri)=>{
     const cells = row.map((val,ci)=>{
       const ref = colName(ci)+(ri+1);
@@ -4616,7 +4645,7 @@ function sheetXML(rows){
     return `<row r="${ri+1}">${cells}</row>`;
   }).join("");
   return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData>${body}</sheetData></worksheet>`;
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">${colsXml}<sheetData>${body}</sheetData>${autoFilterXml}</worksheet>`;
 }
 
 function construirXLSX(hojas){
@@ -4651,7 +4680,7 @@ ${overrides}
 ${hojas.map((h,i)=>`<Relationship Id="rId${i+1}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet${i+1}.xml"/>`).join("")}
 </Relationships>`});
 
-  hojas.forEach((h,i)=> files.push({name:`xl/worksheets/sheet${i+1}.xml`, data: sheetXML(h.filas)}));
+  hojas.forEach((h,i)=> files.push({name:`xl/worksheets/sheet${i+1}.xml`, data: sheetXML(h.filas, h.filtro)}));
   return zipFiles(files);
 }
 
@@ -4690,13 +4719,13 @@ async function exportXLSX(){
         r.modo==="valor"?"Valor fijo":(r.modo==="pctIngreso"?"% del total del dinero":"% del sobrante"),
         r.modo==="valor"?Math.round(r.valor):r.pct, m, real, m-real]);
     });
-    hojas.push({nombre:"Presupuesto", filas:filasPresu});
+    hojas.push({nombre:"Presupuesto", filas:filasPresu, filtro:true});
 
     // 3. Gastos
     const filasGastos = [["Fecha","Mes","Año","Rubro","Monto","Nota"]];
     state.gastos.slice().sort((a,b)=>(a.fecha||"").localeCompare(b.fecha||""))
       .forEach(g=> filasGastos.push([g.fecha, g.mes, g.anio, g.rubro, Math.round(g.monto), g.nota]));
-    hojas.push({nombre:"Gastos", filas:filasGastos});
+    hojas.push({nombre:"Gastos", filas:filasGastos, filtro:true});
 
     // 4. Comparativo mensual del año activo
     const filasComp = [["Rubro","Tipo","Presupuesto mensual"].concat(MESES).concat(["Total "+anio])];
@@ -4706,7 +4735,7 @@ async function exportXLSX(){
     });
     const totMes = MESES.map(m=> Math.round(totalRealMes(m, anio)));
     filasComp.push(["TOTAL","",Math.round(totalPresupuestado())].concat(totMes).concat([totMes.reduce((s,v)=>s+v,0)]));
-    hojas.push({nombre:"Comparativo "+anio, filas:filasComp});
+    hojas.push({nombre:"Comparativo "+anio, filas:filasComp, filtro:true});
 
     // 5. Deudas
     const filasDeudas = [["Nombre","Deuda inicial","Saldo actual","Pago mensual","% pagado","Meses restantes"]];
@@ -4715,7 +4744,7 @@ async function exportXLSX(){
       filasDeudas.push([d.nombre, Math.round(d.inicial), Math.round(d.saldo), Math.round(d.pago), pagado,
         d.pago>0 ? Math.ceil(d.saldo/d.pago) : ""]);
     });
-    hojas.push({nombre:"Deudas", filas:filasDeudas});
+    hojas.push({nombre:"Deudas", filas:filasDeudas, filtro:true});
 
     // 6. Ahorros
     const filasMetas = [["Meta","Objetivo","Ahorrado","Falta","% avance","Fecha objetivo"]];
@@ -4728,7 +4757,7 @@ async function exportXLSX(){
     filasMetas.push(["Fondo de emergencia","Meses de cobertura", state.fondoEmergencia.meses]);
     filasMetas.push(["","Ahorrado", Math.round(state.fondoEmergencia.ahorrado)]);
     filasMetas.push(["","Objetivo", Math.round(totalPresupuestado()*(state.fondoEmergencia.meses||0))]);
-    hojas.push({nombre:"Ahorros", filas:filasMetas});
+    hojas.push({nombre:"Ahorros", filas:filasMetas, filtro:true});
 
     const blob = construirXLSX(hojas);
     const buffer = await blob.arrayBuffer();
@@ -6529,7 +6558,7 @@ const CONFIG = {
   apiVersion: "https://api.github.com/repos/Yes0702/cuentasclaras/releases/latest",
   urlVersion: "https://github.com/Yes0702/cuentasclaras/releases/latest/download/version.json"
 };
-const APP_VERSION = "9.10";
+const APP_VERSION = "9.11";
 
 /* =====================================================================
    AVISO DE ACTUALIZACIÓN (revisa al abrir la app)
