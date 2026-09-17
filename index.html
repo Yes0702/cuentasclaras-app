@@ -770,6 +770,13 @@
           <option value="">Sin recordatorio</option>
         </select>
         <div class="hint" style="margin-top:4px;">Si el mes es más corto (febrero, etc.), te avisaremos el último día disponible.</div>
+        <label style="margin-top:14px;">Icono (opcional)</label>
+        <input type="hidden" id="newRubroIcono" value="">
+        <button type="button" class="cc-colapsable" onclick="ccToggleIconosNuevo()">
+          <span><span id="newRubroIconoPreview" style="font-size:20px; margin-right:8px;">📌</span>Elegir icono</span>
+          <span id="newRubroIconoChev">▾</span>
+        </button>
+        <div id="newRubroIconoGrid" style="display:none; grid-template-columns:repeat(7, minmax(0,1fr)); gap:6px; justify-items:center; margin:10px 0;"></div>
         <div class="edit-actions">
           <button class="btn-primary" style="margin:0;" onclick="addCustomRubro()">Guardar rubro</button>
           <button class="btn-ghost" style="margin:0;" onclick="toggleAddRubro()">Cancelar</button>
@@ -1785,7 +1792,7 @@ const RUBROS_DEFAULT = [
 ];
 
 /* ---- Icono por rubro: el usuario puede elegir el suyo; si no, se sugiere por palabra clave ---- */
-const CC_ICONOS_RUBRO = ["🏠","🏢","🌳","📶","📱","🎒","🧾","🚌","📺","🛒","🏪","⛽","💊","🌿","💡","🚰","🔥","🏥","🙏","🛍️","☕","💇","🍔","🥐","🥩","🍎","🥦","✨","💰","🎉","🐾","🚗","👨","👩","👦","👧","👶","🎁","💳","🎮","📌"];
+const CC_ICONOS_RUBRO = ["🏠","🏢","🌳","📶","📱","🎒","🧾","🚌","📺","🛒","🏪","⛽","💊","🌿","💡","🚰","🔥","🏥","🙏","🛍️","☕","💇","🍔","🥐","🥩","🍎","🥦","✨","💰","🎉","🐾","🚗","👨","👩","👦","👧","👶","🎁","💳","🎮","📌","🐕","✈️","♥️","📽️","🍦","🏍️","🚲","🛞","🏖️","🚐"];
 function ccSugerirIcono(nombre){
   const n = (nombre||"").toLowerCase();
   const reglas = [
@@ -1827,6 +1834,15 @@ function ccElegirIconoTemp(idx, icono){
   const prev = document.getElementById("iconoPreview_"+idx);
   if(hid) hid.value = icono;
   if(prev) prev.textContent = icono;
+  ccToggleIconoEdit(idx); // se cierra solo al elegir, para no ser invasivo
+}
+function ccToggleIconoEdit(idx){
+  const grid = document.getElementById("iconoGrid_"+idx);
+  const chev = document.getElementById("iconoChev_"+idx);
+  if(!grid) return;
+  const abierto = grid.style.display === "grid";
+  grid.style.display = abierto ? "none" : "grid";
+  if(chev) chev.textContent = abierto ? "▾" : "▴";
 }
 
 function alarmaDefault(){
@@ -3346,8 +3362,11 @@ function renderPresupuesto(){
           <input type="text" id="editNombre_${idx}" value="${esc(r.nombre)}">
           <label>Icono</label>
           <input type="hidden" id="editIcono_${idx}" value="${esc(ccIconoRubro(r))}">
-          <div id="iconoPreview_${idx}" style="font-size:30px; text-align:center; margin-bottom:8px;">${ccIconoRubro(r)}</div>
-          <div style="display:grid; grid-template-columns:repeat(7, minmax(0,1fr)); gap:6px; justify-items:center; margin-bottom:14px;">
+          <button type="button" class="cc-colapsable" onclick="ccToggleIconoEdit(${idx})">
+            <span><span id="iconoPreview_${idx}" style="font-size:20px; margin-right:8px;">${ccIconoRubro(r)}</span>Cambiar icono</span>
+            <span id="iconoChev_${idx}">▾</span>
+          </button>
+          <div id="iconoGrid_${idx}" style="display:none; grid-template-columns:repeat(7, minmax(0,1fr)); gap:6px; justify-items:center; margin:10px 0;">
             ${CC_ICONOS_RUBRO.map(ic=>`<button type="button" onclick="ccElegirIconoTemp(${idx},'${ic}')" style="font-size:17px; width:34px; height:34px; line-height:1; padding:0; display:flex; align-items:center; justify-content:center; border-radius:9px; border:1px solid var(--line); background:var(--surface-2); cursor:pointer;">${ic}</button>`).join("")}
           </div>
           <div class="field-row">
@@ -3575,17 +3594,24 @@ function addCustomRubro(){
   const modo = document.getElementById("newRubroModo").value;
   const cant = leerCantidad("newRubroCant", modo);
   const diaPago = parseInt(document.getElementById("newRubroDia").value)||0;
+  const icono = document.getElementById("newRubroIcono").value || "";
   if(!nombre){ toast("Ponle un nombre al rubro."); return; }
   const maxPrio = state.rubros.reduce((m,r)=>Math.max(m,r.prioridad),0);
-  state.rubros.push({
+  const nuevoRubro = {
     nombre, tipo, prioridad:maxPrio+1, modo,
     valor: modo==="valor" ? cant : 0,
     pct:   modo!=="valor" ? cant : 0,
     diaPago
-  });
+  };
+  if(icono) nuevoRubro.icono = icono;
+  state.rubros.push(nuevoRubro);
   document.getElementById("newRubroNombre").value = "";
   document.getElementById("newRubroCant").value = "";
   document.getElementById("newRubroDia").value = "";
+  document.getElementById("newRubroIcono").value = "";
+  document.getElementById("newRubroIconoPreview").textContent = "📌";
+  document.getElementById("newRubroIconoGrid").style.display = "none";
+  document.getElementById("newRubroIconoChev").textContent = "▾";
   document.getElementById("addRubroPanel").style.display = "none";
   saveState();
   renderAll();
@@ -7922,6 +7948,27 @@ function ccLlenarDiasPago(){
   }
 }
 ccLlenarDiasPago();
+
+/* Cuadrícula de iconos al crear un rubro nuevo: empieza colapsada (solo el
+   icono elegido, o uno de referencia), para no ser invasiva en el formulario. */
+function ccLlenarIconoNuevo(){
+  const grid = document.getElementById("newRubroIconoGrid");
+  if(!grid) return;
+  grid.innerHTML = CC_ICONOS_RUBRO.map(ic=>`<button type="button" onclick="ccElegirIconoNuevo('${ic}')" style="font-size:17px; width:34px; height:34px; line-height:1; padding:0; display:flex; align-items:center; justify-content:center; border-radius:9px; border:1px solid var(--line); background:var(--surface-2); cursor:pointer;">${ic}</button>`).join("");
+}
+ccLlenarIconoNuevo();
+function ccToggleIconosNuevo(){
+  const grid = document.getElementById("newRubroIconoGrid");
+  const chev = document.getElementById("newRubroIconoChev");
+  const abierto = grid.style.display === "grid";
+  grid.style.display = abierto ? "none" : "grid";
+  if(chev) chev.textContent = abierto ? "▾" : "▴";
+}
+function ccElegirIconoNuevo(ic){
+  document.getElementById("newRubroIcono").value = ic;
+  document.getElementById("newRubroIconoPreview").textContent = ic;
+  ccToggleIconosNuevo(); // se cierra solo al elegir, para no ser invasivo
+}
 
 ccCargarTema();
 ccCargarTamanoLetra();
