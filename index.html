@@ -3221,6 +3221,11 @@ function renderIngresos(){
         </div>
       </div>`;
   if(mostrarOcasionales){
+    if(ocas.length > 3){
+      html += `<div style="position:sticky; top:0; z-index:5; background:var(--bg); padding:8px 0 10px;">
+        <button class="btn-primary" style="margin:0; width:100%;" onclick="toggleVerOcasionales()">▴ Ver menos</button>
+      </div>`;
+    }
     if(ocas.length===0){
       html += `<div class="empty-state" style="margin-top:8px;">No hay ingresos ocasionales en ${state.mesActivo}. Agrégalos con el botón de abajo.</div>`;
     } else {
