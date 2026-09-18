@@ -4786,7 +4786,7 @@ async function exportXLSX(){
       ["Total gastos fijos", Math.round(totalFijos())],
       ["Sobrante a repartir", Math.round(sob)],
       ["% del sobrante repartido", Math.round(pctRepartido()*10)/10],
-      ["Total presupuestado", Math.round(totalPresupuestado())],
+      ["Total presupuestado (incluye pagos de deuda)", Math.round(totalPresupuestado()+totalPagosDeuda())],
       ["Gastado en el mes", Math.round(totalRealMes(state.mesActivo, anio))],
       ["Gastado en el año", Math.round(totalRealMes("Todos", anio))],
       [],
