@@ -722,7 +722,7 @@
       <div class="card">
         <div class="kpi-grid tight" style="grid-template-columns:1fr 1fr 1fr;">
           <div class="kpi" style="box-shadow:none;"><div class="k-label">Gastos fijos</div><div class="k-value" id="presuFijos">$0</div></div>
-          <div class="kpi" style="box-shadow:none;"><div class="k-label">% del total</div><div class="k-value" id="presuPctIngreso">$0</div></div>
+          <div class="kpi" style="box-shadow:none;"><div class="k-label">Rubros % ingreso</div><div class="k-value" id="presuPctIngreso">$0</div></div>
           <div class="kpi blue" style="box-shadow:none;" id="presuSobranteBox"><div class="k-label">Sobrante</div><div class="k-value" id="presuSobrante">$0</div></div>
         </div>
         <div id="presuDeudaRow" style="display:none; margin-top:10px; padding:9px 12px; background:#FFF4E6; border:1px solid #F0D8A8; border-radius:10px;">
@@ -3364,7 +3364,7 @@ function renderPresupuesto(){
 
   const pill = document.getElementById("presuEstadoPill");
   pill.classList.remove("ok","warn","bad");
-  if(sob < 0){ pill.textContent = "Fijos exceden el ingreso"; pill.classList.add("bad"); }
+  if(sob < 0){ pill.textContent = totalFijos() > state.ingreso ? "Fijos exceden el ingreso" : "Compromisos exceden el ingreso"; pill.classList.add("bad"); }
   else if(Math.abs(repartido-100)<0.05){ pill.textContent = "Sobrante 100% repartido"; pill.classList.add("ok"); }
   else if(repartido<100){ pill.textContent = `Falta repartir ${pct(100-repartido)}`; pill.classList.add("warn"); }
   else { pill.textContent = `Excede por ${pct(repartido-100)}`; pill.classList.add("bad"); }
