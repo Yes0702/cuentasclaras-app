@@ -562,6 +562,15 @@
   </div>
 </div>
 
+<!-- Modal de confirmación genérico (reemplaza confirm(), que no es confiable en el WebView del APK) -->
+<div id="ccConfirmModal" style="display:none; position:fixed; inset:0; z-index:9996; background:rgba(0,0,0,.55); align-items:center; justify-content:center; padding:24px;">
+  <div style="background:var(--surface); border-radius:20px; padding:24px; max-width:340px; width:100%; text-align:center; box-shadow:0 20px 50px rgba(0,0,0,.3);">
+    <div id="ccConfirmModalMsg" style="font-size:14px; color:var(--ink); line-height:1.55; margin-bottom:18px; white-space:pre-line; text-align:left;"></div>
+    <button onclick="ccConfirmModalResolver(true)" style="width:100%; background:var(--brand-dark); color:#fff; border:none; border-radius:12px; padding:13px; font-weight:800; cursor:pointer; margin-bottom:10px;">Sí, continuar</button>
+    <button onclick="ccConfirmModalResolver(false)" style="width:100%; background:var(--surface-2); color:var(--ink); border:none; border-radius:12px; padding:13px; font-weight:700; cursor:pointer;">Cancelar</button>
+  </div>
+</div>
+
 <div id="phone">
 
   <header class="topbar">
@@ -2198,6 +2207,22 @@ function pideConfirmar(key, renderFn){
 }
 function limpiarPendiente(key){ pendingConfirm.delete(key); }
 
+/* ---- Modal de confirmación (para acciones puntuales, no de lista) ----
+   Reemplaza confirm(), que no es confiable en el WebView del APK. */
+let ccConfirmModalCb = null;
+function ccConfirmAsync(mensaje){
+  return new Promise(resolve=>{
+    ccConfirmModalCb = resolve;
+    document.getElementById("ccConfirmModalMsg").textContent = mensaje;
+    document.getElementById("ccConfirmModal").style.display = "flex";
+  });
+}
+function ccConfirmModalResolver(valor){
+  document.getElementById("ccConfirmModal").style.display = "none";
+  const cb = ccConfirmModalCb; ccConfirmModalCb = null;
+  if(cb) cb(valor);
+}
+
 /* ---- Cálculo del presupuesto (fijos por valor, resto por % del sobrante) ---- */
 function totalFijos(){
   return state.rubros.filter(r=>r.modo==="valor").reduce((s,r)=> s + (r.valor||0), 0);
@@ -2435,7 +2460,7 @@ function renderTopbar(){
   const extra = document.getElementById("hbExtra");
   const logo = document.getElementById("hbLogo");
   if(topEj) topEj.style.display = "none";
-  if(extra){ extra.style.display = "none"; extra.innerHTML = ""; }
+  if(extra){ extra.style.display = "none"; extra.innerHTML = ""; extra.style.fontSize = ""; extra.style.fontWeight = ""; extra.style.color = ""; }
   if(valEl) valEl.style.fontSize = "";
   if(logo) logo.style.display = "none";
   if(valEl) valEl.style.display = "";
@@ -2446,7 +2471,16 @@ function renderTopbar(){
     valEl.textContent = money(totalDeuda());
   } else if(ccVistaActual === "gastos"){
     lblEl.textContent = "Has pagado este mes";
-    valEl.textContent = money(totalRealMes(state.mesActivo, state.anioActivo));
+    const gastadoMes = totalRealMes(state.mesActivo, state.anioActivo);
+    valEl.textContent = money(gastadoMes);
+    if(extra){
+      const disponible = state.ingreso - gastadoMes;
+      extra.style.display = "block";
+      extra.style.fontSize = "13px";
+      extra.style.fontWeight = "700";
+      extra.style.color = disponible < 0 ? "#FFD3CE" : "rgba(255,255,255,.95)";
+      extra.textContent = (disponible < 0 ? "Te pasaste por " : "Tienes disponible ") + money(Math.abs(disponible));
+    }
   } else if(ccVistaActual === "ahorros"){
     lblEl.textContent = "Sigue invirtiendo";
     const presuAhorro = ahorroDisponibleMensual();
@@ -3980,6 +4014,8 @@ function ccEditarPagoDeuda(gastoId, deudaId){
 }
 
 function deleteGasto(id){
+  const g = state.gastos.find(x=>x.id===id);
+  if(g && g.origenDeuda){ deshacerPagoDeuda(id, g.origenDeuda); return; }
   state.gastos = state.gastos.filter(g=>g.id!==id);
   saveState();
   renderGastos();
@@ -4060,11 +4096,12 @@ function renderGastosFijos(){
      <div class="hint" style="margin-top:6px;">Si pagaste un valor distinto, edítalo en la lista de gastos de abajo.</div>`;
 }
 
-function toggleGastoFijo(nombreRubro){
+async function toggleGastoFijo(nombreRubro){
   const ya = gastoFijoDelMes(nombreRubro);
   if(ya){
     // Desactivar: pedir confirmación
-    if(confirm("¿Estás seguro? Esto cambia tus gastos y este pago dejará de estar registrado en "+state.mesActivo+".")){
+    const ok = await ccConfirmAsync("¿Estás seguro? Esto cambia tus gastos y este pago dejará de estar registrado en "+state.mesActivo+".");
+    if(ok){
       state.gastos = state.gastos.filter(g=>g.id!==ya.id);
       saveState();
       renderGastosFijos();
@@ -4193,7 +4230,11 @@ function pintarGasto(g){
 }
 
 let editingGastoId = null;
-function openGastoEdit(id){ editingGastoId = id; renderGastos(); }
+function openGastoEdit(id){
+  const g = state.gastos.find(x=>x.id===id);
+  if(g && g.origenDeuda){ toast("Edita este pago desde Gastos → 'Registrar pago de deudas'."); return; }
+  editingGastoId = id; renderGastos();
+}
 function closeGastoEdit(){ editingGastoId = null; renderGastos(); }
 function saveGastoEdit(id){
   const g = state.gastos.find(x=>x.id===id);
@@ -4382,7 +4423,7 @@ function importBackupJSON(evt){
   const file = evt.target.files[0];
   if(!file) return;
   const reader = new FileReader();
-  reader.onload = e=>{
+  reader.onload = async e=>{
     let data;
     try{
       data = JSON.parse(e.target.result);
@@ -4404,7 +4445,8 @@ function importBackupJSON(evt){
     const nM = (data.metas||[]).length;
     const nOc = (data.ingresosOcasionales||data.ingresos||[]).length;
     const resumen = `Este respaldo tiene:\n· ${nG} gasto(s)\n· ${nD} deuda(s)\n· ${nM} meta(s)\n· ${nOc} ingreso(s) adicional(es)\n\n¿Reemplazar tus datos actuales con este respaldo?`;
-    if(!confirm(resumen)){ evt.target.value = ""; return; }
+    const ok = await ccConfirmAsync(resumen);
+    if(!ok){ evt.target.value = ""; return; }
     try{
       state = hidratar(data, defaultState());
       saveState();
