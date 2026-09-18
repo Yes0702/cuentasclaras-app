@@ -6431,8 +6431,8 @@ function totalComprometidoAhorro(){
   // cuánto pides mensual entre fondo de emergencia + aportes de metas
   const aporteFE = state.fondoEmergencia.aporteMensual || 0;
   const aporteMetas = state.metas.reduce((s,m)=>{
-    const ap = calcularAporteMeta(m.objetivo, m.ahorrado, m.mesesObjetivo||0);
-    return s + (ap.lograda ? 0 : (ap.mensual||0));
+    const ap = calcularProgresoMeta(m);
+    return s + (ap && !ap.lograda ? (ap.mensual||0) : 0);
   },0);
   return aporteFE + aporteMetas;
 }
