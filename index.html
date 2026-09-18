@@ -2852,8 +2852,20 @@ function renderDashboard(){
   const hSub = document.getElementById("heroSub");
   if(sob < 0){
     ring.setAttribute("stroke", "#E2584D");
-    hTitle.textContent = "Tus gastos fijos superan el ingreso";
-    hSub.textContent = `Los fijos suman ${money(totalFijos())} y tu ingreso es ${money(state.ingreso)}. Revisa los rubros fijos.`;
+    const faltante = -sob;
+    if(totalFijos() > state.ingreso){
+      hTitle.textContent = "Tus gastos fijos superan el ingreso";
+      hSub.textContent = `Los fijos suman ${money(totalFijos())} y tu ingreso es ${money(state.ingreso)}. Revisa los rubros fijos.`;
+    } else {
+      // Los fijos por sí solos no superan el ingreso: lo que desborda es la suma de
+      // fijos + rubros de "% del ingreso" + pagos de deuda comprometidos este mes.
+      const partes = [];
+      if(totalFijos()>0) partes.push("fijos "+money(totalFijos()));
+      if(totalPctIngreso()>0) partes.push("rubros % del ingreso "+money(totalPctIngreso()));
+      if(totalPagosDeuda()>0) partes.push("pagos de deuda "+money(totalPagosDeuda()));
+      hTitle.textContent = "Tus compromisos superan el ingreso";
+      hSub.textContent = `Entre ${partes.join(" + ")} comprometes ${money(totalFijos()+totalPctIngreso()+totalPagosDeuda())}, pero tu ingreso es ${money(state.ingreso)}. Te faltan ${money(faltante)}.`;
+    }
   } else if(pctIngresoAsignado >= 99.5 && pctIngresoAsignado <= 100.5){
     ring.setAttribute("stroke", "#12A57A");
     hTitle.textContent = "Presupuesto cuadrado";
@@ -2871,10 +2883,11 @@ function renderDashboard(){
   const presu = totalPresupuestado();
   const real = totalRealMes(state.mesActivo, state.anioActivo);
   const pagosDeuda = totalPagosDeuda();
-  // El restante descuenta lo ya gastado Y los pagos de deuda comprometidos (igual que Presupuesto)
-  const restante = state.ingreso - real - pagosDeuda;
+  // Restante = lo que queda del ingreso después de lo ya gastado este mes
+  // (los pagos de deuda comprometidos se ven aparte, en "Deuda pendiente").
+  const restante = state.ingreso - real;
 
-  document.getElementById("kpiPresu").textContent = money(presu);
+  document.getElementById("kpiPresu").textContent = money(presu + pagosDeuda); // incluye pagos de deuda del mes
   document.getElementById("kpiReal").textContent = money(real);
   document.getElementById("kpiRestante").textContent = money(restante);
   document.getElementById("kpiDeuda").textContent = money(totalDeuda());
