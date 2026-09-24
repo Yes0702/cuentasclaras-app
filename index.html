@@ -2417,12 +2417,25 @@ async function ccGenerarPDFResumen(){
   }
 
   // ---- Reunir datos del periodo ----
-  const ingresoBase = (state.ingresoPrincipal && state.ingresoPrincipal.monto) || 0;
+  // El ingreso principal se resuelve MES A MES (no con el valor "de hoy"), para que
+  // un reporte de varios meses sea exacto aunque el ingreso haya cambiado entre ellos.
   let ingresoTotal = 0, gastadoTotal = 0;
+  let totalQ1 = 0, totalQ2 = 0, totalMensual = 0, totalOcasional = 0;
+  let huboQuincenal = false, huboMensual = false;
   const porRubro = {};  // nombre -> {presupuestado, gastado}
   meses.forEach(([m,a])=>{
+    const snap = ccResolverSnapshotIngresoPrincipalPara(m, a);
     const ocasional = (state.ingresosOcasionales||[]).filter(x=>x.mes===m && x.anio===a).reduce((s,x)=>s+(x.monto||0),0);
-    ingresoTotal += ingresoBase + ocasional;
+    ingresoTotal += (snap.monto||0) + ocasional;
+    totalOcasional += ocasional;
+    if(snap.frecuencia === "quincenal"){
+      huboQuincenal = true;
+      totalQ1 += snap.montoQ1||0;
+      totalQ2 += snap.montoQ2||0;
+    } else {
+      huboMensual = true;
+      totalMensual += snap.monto||0;
+    }
     state.rubros.forEach(r=>{
       if(!porRubro[r.nombre]) porRubro[r.nombre] = { presupuestado:0, gastado:0 };
       porRubro[r.nombre].presupuestado += montoRubro(r);
@@ -2449,10 +2462,27 @@ async function ccGenerarPDFResumen(){
   y += 28;
 
   doc.setFont("helvetica","bold"); doc.setFontSize(12);
-  doc.text("Ingreso total: " + money(ingresoTotal), margen, y); y += 18;
+  doc.text("Ingreso total: " + money(ingresoTotal), margen, y); y += 16;
+
+  doc.setFont("helvetica","normal"); doc.setFontSize(9.5); doc.setTextColor(100);
+  if(huboQuincenal){
+    doc.text("· Quincena 1: " + money(totalQ1) + "     · Quincena 2: " + money(totalQ2), margen+8, y); y += 13;
+  }
+  if(huboMensual){
+    doc.text("· Mensual: " + money(totalMensual), margen+8, y); y += 13;
+  }
+  if(totalOcasional>0){
+    doc.text("· Ocasionales: " + money(totalOcasional), margen+8, y); y += 13;
+  }
+  doc.setTextColor(0);
+  y += 8;
+
+  doc.setFont("helvetica","bold"); doc.setFontSize(12);
   doc.text("Gastado total: " + money(gastadoTotal), margen, y); y += 18;
   const diferencia = ingresoTotal - gastadoTotal;
-  doc.text((diferencia>=0 ? "Sobrante: " : "Faltante: ") + money(Math.abs(diferencia)), margen, y);
+  doc.text((diferencia>=0 ? "Sobrante: " : "Faltante: ") + money(Math.abs(diferencia)), margen, y); y += 18;
+  const pctGastado = ingresoTotal>0 ? (gastadoTotal/ingresoTotal*100) : 0;
+  doc.text("% del ingreso gastado: " + pct(pctGastado), margen, y);
   y += 30;
 
   doc.setFontSize(13); doc.text("Gasto por rubro", margen, y); y += 6;
