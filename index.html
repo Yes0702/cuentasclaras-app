@@ -2310,6 +2310,10 @@ function ccMesAnterior(mes, anio){
   const idx = MESES.indexOf(mes);
   return idx===0 ? { mes: MESES[11], anio: anio-1 } : { mes: MESES[idx-1], anio };
 }
+function ccMesSiguiente(mes, anio){
+  const idx = MESES.indexOf(mes);
+  return idx===11 ? { mes: MESES[0], anio: anio+1 } : { mes: MESES[idx+1], anio };
+}
 // Ingreso principal que aplicaba en un mes pasado, según el historial por mes
 // (misma resolución "se hereda del mes anterior" que usa ccResolverIngresoPrincipal,
 // pero sin mutar state.ingresoPrincipal — este solo lee).
@@ -3252,11 +3256,53 @@ function ccResolverIngresoPrincipal(){
   }
   state.ingresoPrincipal = nuevo;
 }
+// Devuelve el ingreso principal COMPLETO (monto, frecuencia, montoQ1, montoQ2) que
+// resultaría para (mes,anio) con el historial actual — misma resolución que
+// ccResolverIngresoPrincipal, pero sin mutar state.ingresoPrincipal y para un mes
+// cualquiera, no solo el activo. Se usa para "congelar" un mes antes de que un
+// cambio en un mes anterior le cambie lo que estaba heredando.
+function ccResolverSnapshotIngresoPrincipalPara(mes, anio){
+  const historial = state.ingresoPrincipalPorMes || {};
+  const clave = ccClaveMes(mes, anio);
+  const claves = Object.keys(historial).map(Number).filter(k=>k<=clave).sort((a,b)=>b-a);
+  if(claves.length===0){
+    // Nada del historial por mes aplica todavía: lo que se venía usando es el
+    // valor "global" de siempre (compatibilidad con versiones sin ingreso por mes).
+    return {
+      monto: (state.ingresoPrincipal&&state.ingresoPrincipal.monto)||0,
+      frecuencia: (state.ingresoPrincipal&&state.ingresoPrincipal.frecuencia)||"mensual",
+      montoQ1: (state.ingresoPrincipal&&state.ingresoPrincipal.montoQ1)||0,
+      montoQ2: (state.ingresoPrincipal&&state.ingresoPrincipal.montoQ2)||0
+    };
+  }
+  const snap = historial[claves[0]];
+  const esHeredado = claves[0] !== clave;
+  const nuevo = {
+    monto: snap.monto||0,
+    frecuencia: snap.frecuencia||"mensual",
+    montoQ1: snap.montoQ1||0,
+    montoQ2: esHeredado ? 0 : (snap.montoQ2||0)
+  };
+  if(nuevo.frecuencia==="quincenal" && esHeredado) nuevo.monto = nuevo.montoQ1;
+  return nuevo;
+}
 /* Guarda una "foto" del ingreso principal para el mes activo, para que quede fijo
    desde ese mes en adelante (sin afectar meses anteriores). */
 function ccGuardarSnapshotIngresoPrincipal(){
   const clave = ccClaveMes(state.mesActivo, state.anioActivo);
   if(!state.ingresoPrincipalPorMes) state.ingresoPrincipalPorMes = {};
+
+  // Si el mes SIGUIENTE ya pasó (tiene gastos registrados) y todavía no tenía su
+  // propio ingreso guardado —es decir, estaba heredando de este mes—, lo dejamos
+  // fijo con el valor que tenía justo ANTES de este cambio. Así, corregir un mes
+  // atrás no te reescribe en silencio lo que ya calculaste en meses posteriores.
+  const sig = ccMesSiguiente(state.mesActivo, state.anioActivo);
+  const claveSig = ccClaveMes(sig.mes, sig.anio);
+  const siguienteYaPaso = state.gastos.some(g=>g.mes===sig.mes && g.anio===sig.anio);
+  if(siguienteYaPaso && !state.ingresoPrincipalPorMes[claveSig]){
+    state.ingresoPrincipalPorMes[claveSig] = ccResolverSnapshotIngresoPrincipalPara(sig.mes, sig.anio);
+  }
+
   state.ingresoPrincipalPorMes[clave] = {
     monto: state.ingresoPrincipal.monto||0,
     frecuencia: state.ingresoPrincipal.frecuencia||"mensual",
