@@ -2488,7 +2488,7 @@ async function ccGenerarPDFResumen(){
   doc.setFontSize(13); doc.text("Gasto por rubro", margen, y); y += 6;
   doc.setDrawColor(200); doc.line(margen, y, pageW-margen, y); y += 16;
   doc.setFont("helvetica","bold"); doc.setFontSize(10);
-  doc.text("Rubro", margen, y); doc.text("Presupuestado", 300, y); doc.text("Gastado", 400, y); doc.text("Diferencia", 480, y);
+  doc.text("Rubro", margen, y); doc.text("Presupuestado", 250, y); doc.text("Gastado", 345, y); doc.text("Diferencia", 415, y); doc.text("% Gasto", 500, y);
   y += 12;
   doc.setDrawColor(230); doc.line(margen, y, pageW-margen, y); y += 12;
   doc.setFont("helvetica","normal");
@@ -2496,10 +2496,12 @@ async function ccGenerarPDFResumen(){
     if(y > 760){ doc.addPage(); y = 50; }
     const d = porRubro[nombre];
     const dif = d.presupuestado - d.gastado;
-    doc.text(String(nombre).slice(0,32), margen, y);
-    doc.text(money(d.presupuestado), 300, y);
-    doc.text(money(d.gastado), 400, y);
-    doc.text((dif>=0?"":"-") + money(Math.abs(dif)), 480, y);
+    const pctRubro = gastadoTotal>0 ? d.gastado/gastadoTotal*100 : 0;
+    doc.text(String(nombre).slice(0,26), margen, y);
+    doc.text(money(d.presupuestado), 250, y);
+    doc.text(money(d.gastado), 345, y);
+    doc.text((dif>=0?"":"-") + money(Math.abs(dif)), 415, y);
+    doc.text(pct(pctRubro), 500, y);
     y += 16;
   });
 
