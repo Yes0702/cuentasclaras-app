@@ -135,6 +135,12 @@
   }
   .cc-headbox .hb-label{ font-size:11px; text-transform:uppercase; letter-spacing:.8px; color:rgba(255,255,255,.85); font-weight:700; }
   .cc-headbox .hb-value{ font-family:var(--font-mono); font-size:24px; font-weight:700; color:#fff; margin-top:2px; line-height:1.1; }
+  .hb-arrastre{
+    display:flex; align-items:center; gap:5px; margin-top:8px; padding-top:8px;
+    border-top:1px dashed rgba(255,255,255,.25); font-size:12px; font-weight:700;
+  }
+  .hb-arrastre.pos{ color:#C9F5E3; }
+  .hb-arrastre.neg{ color:#FFD3CE; }
   .cc-headbox.clickable{ cursor:pointer; }
   .cc-headbox.clickable:active{ background:rgba(255,255,255,.24); }
   .orden-pago-row{
@@ -590,6 +596,7 @@
         <img id="hbLogo" src="icons/breb-logo.png" alt="Bre-B" style="display:none; height:30px; width:auto; background:#fff; padding:4px 8px; border-radius:8px; margin-top:3px;">
         <div class="hb-value" id="topIngreso">$0</div>
         <div id="topIngresoEjemplo" style="display:none; font-size:10.5px; color:rgba(255,255,255,.9); margin-top:2px; font-weight:600;">Ejemplo · edítalo en Presupuesto</div>
+        <div id="hbArrastre" class="hb-arrastre" style="display:none;"></div>
         <div id="hbExtra" style="display:none; font-size:11px; color:rgba(255,255,255,.9); margin-top:3px; line-height:1.35;"></div>
       </div>
       <div class="period">
@@ -2264,6 +2271,56 @@ function totalRealMes(mes, anio){
       (mes==="Todos" || g.mes===mes) && (anio==="Todos" || g.anio===anio)
     ).reduce((s,g)=> s + g.monto, 0);
 }
+/* =====================================================================
+   SALDO ARRASTRADO: lo que sobró o faltó del mes (o meses) anteriores,
+   para que el "Restante" de hoy sea real y no empiece cada mes en blanco.
+   ===================================================================== */
+function ccMesAnterior(mes, anio){
+  const idx = MESES.indexOf(mes);
+  return idx===0 ? { mes: MESES[11], anio: anio-1 } : { mes: MESES[idx-1], anio };
+}
+// Ingreso principal que aplicaba en un mes pasado, según el historial por mes
+// (misma resolución "se hereda del mes anterior" que usa ccResolverIngresoPrincipal,
+// pero sin mutar state.ingresoPrincipal — este solo lee).
+function ccIngresoPrincipalEnMes(mes, anio){
+  const historial = state.ingresoPrincipalPorMes || {};
+  const claves = Object.keys(historial).map(Number);
+  if(claves.length===0) return (state.ingresoPrincipal && state.ingresoPrincipal.monto) || 0;
+  const clave = ccClaveMes(mes, anio);
+  const anteriores = claves.filter(k=>k<=clave).sort((a,b)=>b-a);
+  if(anteriores.length===0) return 0; // antes del primer registro que existe: no había ingreso configurado
+  const snap = historial[anteriores[0]];
+  const esHeredado = anteriores[0] !== clave;
+  if(snap.frecuencia==="quincenal" && esHeredado) return snap.montoQ1||0; // Q2 no se hereda
+  return snap.monto||0;
+}
+function ccIngresoDelMesHistorico(mes, anio){
+  const oc = (state.ingresosOcasionales||[])
+    .filter(i=> i.mes===mes && i.anio===anio)
+    .reduce((s,i)=> s + (i.monto||0), 0);
+  return ccIngresoPrincipalEnMes(mes, anio) + oc;
+}
+// Suma (ingreso - gastado) de los meses ANTERIORES a (mes,anio), mes a mes hacia
+// atrás. Se detiene en el primer mes SIN ningún gasto registrado — ese mes no se
+// cuenta ni se sigue más atrás, porque el ingreso se "hereda" automáticamente de
+// un mes a otro y, si no hay gastos, no hay forma de saber si de verdad sobró todo
+// el ingreso o si esos meses simplemente no se usó la app (evita que un hueco de
+// varios meses sin usar la app aparezca como si hubiera sobrado el sueldo entero).
+// Se calcula solo, sin "cerrar" nada: si editas un gasto viejo, se recalcula solo
+// la próxima vez que se muestre. Devuelve null si el mes inmediatamente anterior
+// no tiene gastos (no hay nada real que arrastrar: no mostrar la línea).
+function ccSaldoArrastradoAntesDe(mes, anio){
+  let saldo = 0, m = mes, a = anio, huboAlMenosUnMes = false;
+  for(let i=0;i<1200;i++){ // tope de seguridad: 100 años hacia atrás
+    const ant = ccMesAnterior(m, a);
+    m = ant.mes; a = ant.anio;
+    const tieneGastos = state.gastos.some(g=>g.mes===m && g.anio===a);
+    if(!tieneGastos) break;
+    saldo += ccIngresoDelMesHistorico(m, a) - totalRealMes(m, a);
+    huboAlMenosUnMes = true;
+  }
+  return huboAlMenosUnMes ? saldo : null;
+}
 function totalDeuda(){ return state.deudas.reduce((s,d)=> s + Math.max(0,d.saldo), 0); }
 function totalAhorradoMetas(){ return state.metas.reduce((s,m)=> s + m.ahorrado, 0); }
 function totalObjetivoMetas(){ return state.metas.reduce((s,m)=> s + m.objetivo, 0); }
@@ -2458,9 +2515,11 @@ function renderTopbar(){
   const valEl = document.getElementById("topIngreso");
   const topEj = document.getElementById("topIngresoEjemplo");
   const extra = document.getElementById("hbExtra");
+  const arrastreEl = document.getElementById("hbArrastre");
   const logo = document.getElementById("hbLogo");
   if(topEj) topEj.style.display = "none";
   if(extra){ extra.style.display = "none"; extra.innerHTML = ""; extra.style.fontSize = ""; extra.style.fontWeight = ""; extra.style.color = ""; }
+  if(arrastreEl){ arrastreEl.style.display = "none"; arrastreEl.className = "hb-arrastre"; arrastreEl.textContent = ""; }
   if(valEl) valEl.style.fontSize = "";
   if(logo) logo.style.display = "none";
   if(valEl) valEl.style.display = "";
@@ -2473,8 +2532,14 @@ function renderTopbar(){
     lblEl.textContent = "Has pagado este mes";
     const gastadoMes = totalRealMes(state.mesActivo, state.anioActivo);
     valEl.textContent = money(gastadoMes);
+    const saldoAnterior = ccSaldoArrastradoAntesDe(state.mesActivo, state.anioActivo);
+    if(arrastreEl && saldoAnterior!==null && Math.round(saldoAnterior)!==0){
+      arrastreEl.style.display = "flex";
+      arrastreEl.classList.add(saldoAnterior < 0 ? "neg" : "pos");
+      arrastreEl.textContent = "↩︎ Traes del mes pasado: " + (saldoAnterior < 0 ? "−" : "+") + money(Math.abs(saldoAnterior));
+    }
     if(extra){
-      const disponible = state.ingreso - gastadoMes;
+      const disponible = state.ingreso + (saldoAnterior||0) - gastadoMes;
       extra.style.display = "block";
       extra.style.fontSize = "13px";
       extra.style.fontWeight = "700";
@@ -2883,9 +2948,11 @@ function renderDashboard(){
   const presu = totalPresupuestado();
   const real = totalRealMes(state.mesActivo, state.anioActivo);
   const pagosDeuda = totalPagosDeuda();
-  // Restante = lo que queda del ingreso después de lo ya gastado este mes
-  // (los pagos de deuda comprometidos se ven aparte, en "Deuda pendiente").
-  const restante = state.ingreso - real;
+  // Restante = lo que queda del ingreso después de lo ya gastado este mes,
+  // arrastrando lo que sobró o faltó de meses anteriores (los pagos de deuda
+  // comprometidos se ven aparte, en "Deuda pendiente").
+  const saldoAnteriorDash = ccSaldoArrastradoAntesDe(state.mesActivo, state.anioActivo) || 0;
+  const restante = state.ingreso + saldoAnteriorDash - real;
 
   document.getElementById("kpiPresu").textContent = money(presu + pagosDeuda); // incluye pagos de deuda del mes
   document.getElementById("kpiReal").textContent = money(real);
