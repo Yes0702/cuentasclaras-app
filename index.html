@@ -447,6 +447,37 @@
   }
   .chart-readout b{font-family:var(--font-mono); color:var(--ink); font-weight:700;}
 
+  /* ---------- TORTA: tocar una porción para ver el valor ---------- */
+  .torta-wrap{ position:relative; display:flex; justify-content:center; padding:6px 0 4px; }
+  .torta-wrap path{ cursor:pointer; transition:opacity .15s ease, transform .15s ease; transform-origin:100px 100px; }
+  .torta-wrap path.dim{ opacity:.32; }
+  .torta-wrap path.activo{ transform:scale(1.035); }
+  .torta-hole-lbl{ font-family:var(--font-mono); font-size:8.5px; fill:var(--ink-mute); font-weight:600; letter-spacing:.03em; }
+  .torta-hole-val{ font-family:var(--font-mono); font-size:13.5px; fill:var(--ink); font-weight:700; }
+  .torta-globo{
+    position:absolute; top:-4px; left:50%; max-width:220px;
+    transform:translate(-50%,-100%) scale(.94);
+    background:var(--ink); color:#fff; border-radius:14px; padding:9px 13px;
+    box-shadow:0 8px 20px rgba(10,25,18,.28); text-align:center;
+    opacity:0; pointer-events:none; transition:opacity .16s ease, transform .16s ease; z-index:3;
+  }
+  .torta-globo.mostrar{ opacity:1; transform:translate(-50%,-108%) scale(1); }
+  .torta-globo .tg-nombre{ font-size:11px; font-weight:700; opacity:.85; display:flex; gap:5px; justify-content:center; align-items:center; }
+  .torta-globo .tg-valor{ font-family:var(--font-mono); font-size:16px; font-weight:700; margin-top:2px; }
+  .torta-globo .tg-pct{ font-size:10px; opacity:.7; margin-top:2px; font-weight:600; }
+  .torta-globo::after{
+    content:""; position:absolute; bottom:-6px; left:50%; transform:translateX(-50%);
+    border-width:6px 6px 0 6px; border-style:solid; border-color:var(--ink) transparent transparent transparent;
+  }
+  .torta-legend-row{
+    display:flex; align-items:center; gap:7px; font-size:12.5px; padding:7px 6px; border-radius:10px;
+    cursor:pointer; border:1.5px solid transparent; margin-bottom:2px;
+  }
+  .torta-legend-row.activo{ background:var(--brand-soft); border-color:#BFE9DA; }
+  .torta-legend-row .tl-nombre{ flex:1; min-width:0; overflow-wrap:anywhere; }
+  .torta-legend-row .tl-valor{ font-family:var(--font-mono); font-size:11px; color:var(--ink-mute); font-weight:600; }
+  .torta-legend-row.activo .tl-valor{ color:var(--brand-dark); }
+
   /* ---------- BANNER ---------- */
   .banner{
     display:flex; gap:11px; align-items:center;
@@ -2482,6 +2513,8 @@ function showView(name){
   document.querySelectorAll(".bottomnav button").forEach(b=>b.classList.toggle("active", b.dataset.view===name));
   document.getElementById("views").scrollTop = 0;
   ccVistaActual = name;
+  chartState.inicio.tortaPick = null;
+  chartState.gastos.tortaPick = null;
   renderAll();
 }
 
@@ -2502,6 +2535,8 @@ function cambiarAnio(delta){
   state.anioActivo = nuevo;
   chartState.inicio.pick = null;
   chartState.gastos.pick = null;
+  chartState.inicio.tortaPick = null;
+  chartState.gastos.tortaPick = null;
   saveState();
   renderAll();
 }
@@ -2594,6 +2629,8 @@ function renderTopbar(){
         state.anioActivo = Number(e.target.value);
         chartState.inicio.pick = null;
         chartState.gastos.pick = null;
+        chartState.inicio.tortaPick = null;
+        chartState.gastos.tortaPick = null;
         ccSyncFiltroPendiente = true;
         saveState(); renderAll();
       });
@@ -2604,7 +2641,12 @@ function renderTopbar(){
   if(!sel.dataset.filled){
     sel.innerHTML = MESES.map(m=>`<option value="${m}">${m}</option>`).join("");
     sel.dataset.filled = "1";
-    sel.addEventListener("change", e=>{ state.mesActivo = e.target.value; ccSyncFiltroPendiente = true; saveState(); renderAll(); });
+    sel.addEventListener("change", e=>{
+      state.mesActivo = e.target.value;
+      chartState.inicio.tortaPick = null;
+      chartState.gastos.tortaPick = null;
+      ccSyncFiltroPendiente = true; saveState(); renderAll();
+    });
   }
   sel.value = state.mesActivo;
 }
@@ -2622,8 +2664,8 @@ function sincronizarFiltrosGastos(){
    GRÁFICA DE LÍNEAS (comparativo mensual)
    ===================================================================== */
 const chartState = {
-  inicio: { rubro:"Todos", pick:null, vista:"torta" },
-  gastos: { rubro:"Todos", pick:null, vista:"torta" }
+  inicio: { rubro:"Todos", pick:null, vista:"torta", tortaPick:null },
+  gastos: { rubro:"Todos", pick:null, vista:"torta", tortaPick:null }
 };
 
 function serieMensual(rubro, anio){
@@ -2670,6 +2712,7 @@ function chartPick(key, i){
 
 function ccSetVistaChart(key, vista){
   chartState[key].vista = vista;
+  chartState[key].tortaPick = null;
   const sel = document.getElementById(key==="gastos" ? "chartRubroGastos" : "chartRubroInicio");
   if(sel) sel.style.display = (vista==="torta") ? "none" : "";
   const bBar = document.getElementById("vistaBarras_"+key);
@@ -2679,7 +2722,26 @@ function ccSetVistaChart(key, vista){
   renderChart(key);
 }
 const CC_COLORES_TORTA = ["#2F80ED","#EF8E3E","#12A57A","#D2A012","#E2584D","#7C6FE0"];
-function renderTortaChart(cont){
+function tortaTap(key, i){
+  chartState[key].tortaPick = (chartState[key].tortaPick===i ? null : i);
+  renderChart(key);
+}
+// Deselecciona la porción tocada de la torta si el clic fue fuera del gráfico
+// (cambiar de mes/año, de rubro, de pestaña Torta/Barras, o de sección, también la limpian).
+// Se usa la fase de captura porque al tocar una porción el propio clic reconstruye
+// el SVG (innerHTML) antes de llegar a la fase de burbuja: para entonces e.target ya
+// quedó desprendido del documento y cont.contains(e.target) daría un falso "afuera".
+document.addEventListener("click", (e)=>{
+  ["inicio","gastos"].forEach(key=>{
+    if(chartState[key].tortaPick === null) return;
+    const cont = document.getElementById(key==="gastos" ? "chartGastos" : "chartInicio");
+    if(cont && !cont.contains(e.target)){
+      chartState[key].tortaPick = null;
+      renderChart(key);
+    }
+  });
+}, true);
+function renderTortaChart(cont, key){
   const anio = state.anioActivo, mes = state.mesActivo;
   const porRubro = {};
   state.gastos.filter(g=>g.anio===anio && g.mes===mes).forEach(g=>{
@@ -2688,6 +2750,7 @@ function renderTortaChart(cont){
   let entradas = Object.entries(porRubro).sort((a,b)=>b[1]-a[1]);
   const total = entradas.reduce((s,[,v])=>s+v, 0);
   if(total<=0){
+    chartState[key].tortaPick = null;
     cont.innerHTML = `<div class="empty-state">Aún no hay gastos este mes para mostrar la torta.</div>`;
     return;
   }
@@ -2697,6 +2760,9 @@ function renderTortaChart(cont){
     const restoSum = entradas.slice(MAXSEG-1).reduce((s,[,v])=>s+v, 0);
     entradas = principales.concat([["Otros", restoSum]]);
   }
+  let pick = chartState[key].tortaPick;
+  if(pick!==null && (pick<0 || pick>=entradas.length)){ pick = null; chartState[key].tortaPick = null; }
+
   const cx=100, cy=100, r=80;
   let angulo = -Math.PI/2;
   let paths = "";
@@ -2706,26 +2772,48 @@ function renderTortaChart(cont){
     const x1 = cx + r*Math.cos(angulo), y1 = cy + r*Math.sin(angulo);
     const x2 = cx + r*Math.cos(anguloSig), y2 = cy + r*Math.sin(anguloSig);
     const largeArc = (anguloSig-angulo) > Math.PI ? 1 : 0;
-    paths += `<path d="M${cx},${cy} L${x1.toFixed(2)},${y1.toFixed(2)} A${r},${r} 0 ${largeArc} 1 ${x2.toFixed(2)},${y2.toFixed(2)} Z" fill="${CC_COLORES_TORTA[i%CC_COLORES_TORTA.length]}"></path>`;
+    const claseEstado = pick===null ? "" : (pick===i ? " activo" : " dim");
+    paths += `<path class="${claseEstado.trim()}" data-i="${i}" onclick="tortaTap('${key}',${i})" d="M${cx},${cy} L${x1.toFixed(2)},${y1.toFixed(2)} A${r},${r} 0 ${largeArc} 1 ${x2.toFixed(2)},${y2.toFixed(2)} Z" fill="${CC_COLORES_TORTA[i%CC_COLORES_TORTA.length]}"></path>`;
     angulo = anguloSig;
   });
-  const svg = `<svg viewBox="0 0 200 200" style="width:200px; height:200px; display:block; margin:0 auto;">${paths}<circle cx="100" cy="100" r="46" fill="var(--surface)"></circle></svg>`;
+
+  let holeLbl = "TOTAL", holeVal = money(total);
+  let globo = "";
+  if(pick!==null){
+    const [nombreSel, valorSel] = entradas[pick];
+    const pctSel = Math.round(valorSel/total*100);
+    const iconoSel = nombreSel==="Otros" ? "🔹" : ccIconoPorNombreRubro(nombreSel);
+    const nombreCorto = nombreSel.length>16 ? nombreSel.slice(0,15)+"…" : nombreSel;
+    holeLbl = esc(nombreCorto).toUpperCase();
+    holeVal = money(valorSel);
+    globo = `<div class="torta-globo mostrar">
+      <div class="tg-nombre">${iconoSel} ${esc(nombreSel)}</div>
+      <div class="tg-valor">${money(valorSel)}</div>
+      <div class="tg-pct">${pctSel}% del total · ${money(total)}</div>
+    </div>`;
+  }
+
+  const svg = `<svg viewBox="0 0 200 200" style="width:200px; height:200px; display:block; margin:0 auto;">${paths}<circle cx="100" cy="100" r="46" fill="var(--surface)"></circle>
+    <text x="100" y="95" text-anchor="middle" class="torta-hole-lbl">${holeLbl}</text>
+    <text x="100" y="112" text-anchor="middle" class="torta-hole-val">${holeVal}</text>
+  </svg>`;
   const legend = entradas.map(([nombre,valor], i)=>{
     const pctVal = Math.round(valor/total*100);
     const icono = nombre==="Otros" ? "🔹" : ccIconoPorNombreRubro(nombre);
-    return `<div style="display:flex; align-items:center; gap:6px; font-size:12.5px; margin-bottom:6px;">
+    return `<div class="torta-legend-row${pick===i?" activo":""}" onclick="tortaTap('${key}',${i})">
       <span style="width:10px; height:10px; border-radius:3px; background:${CC_COLORES_TORTA[i%CC_COLORES_TORTA.length]}; flex-shrink:0;"></span>
-      <span style="flex:1; min-width:0; overflow-wrap:anywhere;">${icono} ${esc(nombre)}</span>
+      <span class="tl-nombre">${icono} ${esc(nombre)}</span>
+      <span class="tl-valor">${money(valor)}</span>
       <b>${pctVal}%</b>
     </div>`;
   }).join("");
-  cont.innerHTML = `<div style="padding:6px 0;">${svg}</div><div style="margin-top:6px;">${legend}</div>`;
+  cont.innerHTML = `<div class="torta-wrap">${svg}${globo}</div><div style="margin-top:6px;">${legend}</div>`;
 }
 function renderChart(key){
   const cont = document.getElementById(key==="inicio" ? "chartInicio" : "chartGastos");
   if(!cont) return;
   const cs = chartState[key];
-  if(cs.vista === "torta"){ renderTortaChart(cont); return; }
+  if(cs.vista === "torta"){ renderTortaChart(cont, key); return; }
   const anio = state.anioActivo;
   const real = serieMensual(cs.rubro, anio);
   const prev = serieMensual(cs.rubro, anio-1);
