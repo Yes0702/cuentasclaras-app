@@ -457,7 +457,7 @@
   .torta-globo{
     position:absolute; top:-4px; left:50%; max-width:220px;
     transform:translate(-50%,-100%) scale(.94);
-    background:var(--ink); color:#fff; border-radius:14px; padding:9px 13px;
+    background:var(--brand-deep); color:#fff; border-radius:14px; padding:9px 13px;
     box-shadow:0 8px 20px rgba(10,25,18,.28); text-align:center;
     opacity:0; pointer-events:none; transition:opacity .16s ease, transform .16s ease; z-index:3;
   }
@@ -467,7 +467,7 @@
   .torta-globo .tg-pct{ font-size:10px; opacity:.7; margin-top:2px; font-weight:600; }
   .torta-globo::after{
     content:""; position:absolute; bottom:-6px; left:50%; transform:translateX(-50%);
-    border-width:6px 6px 0 6px; border-style:solid; border-color:var(--ink) transparent transparent transparent;
+    border-width:6px 6px 0 6px; border-style:solid; border-color:var(--brand-deep) transparent transparent transparent;
   }
   .torta-legend-row{
     display:flex; align-items:center; gap:7px; font-size:12.5px; padding:7px 6px; border-radius:10px;
@@ -477,6 +477,11 @@
   .torta-legend-row .tl-nombre{ flex:1; min-width:0; overflow-wrap:anywhere; }
   .torta-legend-row .tl-valor{ font-family:var(--font-mono); font-size:11px; color:var(--ink-mute); font-weight:600; }
   .torta-legend-row.activo .tl-valor{ color:var(--brand-dark); }
+  .torta-otros-sub{ margin:2px 0 6px 26px; padding-left:10px; border-left:2px solid var(--line); }
+  .torta-otros-fila{ display:flex; align-items:center; gap:7px; font-size:11.5px; padding:4px 6px; color:var(--ink-soft); }
+  .torta-otros-fila .tl-nombre{ flex:1; min-width:0; overflow-wrap:anywhere; }
+  .torta-otros-fila .tl-valor{ font-family:var(--font-mono); font-size:10.5px; color:var(--ink-mute); font-weight:600; }
+  .torta-otros-fila b{ font-family:var(--font-mono); font-weight:700; color:var(--ink-soft); min-width:32px; text-align:right; }
 
   /* ---------- BANNER ---------- */
   .banner{
@@ -2759,9 +2764,11 @@ function renderTortaChart(cont, key){
     return;
   }
   const MAXSEG = 6;
+  let restoDetalle = [];
   if(entradas.length > MAXSEG){
     const principales = entradas.slice(0, MAXSEG-1);
-    const restoSum = entradas.slice(MAXSEG-1).reduce((s,[,v])=>s+v, 0);
+    restoDetalle = entradas.slice(MAXSEG-1); // ya vienen de mayor a menor
+    const restoSum = restoDetalle.reduce((s,[,v])=>s+v, 0);
     entradas = principales.concat([["Otros", restoSum]]);
   }
   let pick = chartState[key].tortaPick;
@@ -2804,12 +2811,26 @@ function renderTortaChart(cont, key){
   const legend = entradas.map(([nombre,valor], i)=>{
     const pctVal = Math.round(valor/total*100);
     const icono = nombre==="Otros" ? "🔹" : ccIconoPorNombreRubro(nombre);
-    return `<div class="torta-legend-row${pick===i?" activo":""}" onclick="tortaTap('${key}',${i})">
+    const fila = `<div class="torta-legend-row${pick===i?" activo":""}" onclick="tortaTap('${key}',${i})">
       <span style="width:10px; height:10px; border-radius:3px; background:${CC_COLORES_TORTA[i%CC_COLORES_TORTA.length]}; flex-shrink:0;"></span>
       <span class="tl-nombre">${icono} ${esc(nombre)}</span>
       <span class="tl-valor">${money(valor)}</span>
       <b>${pctVal}%</b>
     </div>`;
+    // "Otros" seleccionado: despliega debajo cada rubro que quedó agrupado ahí.
+    if(nombre==="Otros" && pick===i && restoDetalle.length){
+      const sub = restoDetalle.map(([n,v])=>{
+        const ic = ccIconoPorNombreRubro(n);
+        const p = Math.round(v/total*100);
+        return `<div class="torta-otros-fila">
+          <span class="tl-nombre">${ic} ${esc(n)}</span>
+          <span class="tl-valor">${money(v)}</span>
+          <b>${p}%</b>
+        </div>`;
+      }).join("");
+      return fila + `<div class="torta-otros-sub">${sub}</div>`;
+    }
+    return fila;
   }).join("");
   cont.innerHTML = `<div class="torta-wrap">${svg}${globo}</div><div style="margin-top:6px;">${legend}</div>`;
 }
