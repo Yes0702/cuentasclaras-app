@@ -2471,18 +2471,21 @@ async function ccGenerarPDFResumen(){
   const margen = 40;
   let y = 50;
 
-  const logoDataUrl = await ccCargarImagenComoDataURL("icons/icon-192.png").catch(()=>null);
-  const logoLado = 30;
-  const textoX = logoDataUrl ? margen + logoLado + 10 : margen;
+  // Encabezado tipo membrete: logo grande centrado, título debajo, también centrado.
+  const logoDataUrl = await ccCargarImagenComoDataURL("icons/icon-512.png").catch(()=>null);
+  const logoLado = 56;
   if(logoDataUrl){
-    try{ doc.addImage(logoDataUrl, "PNG", margen, y-22, logoLado, logoLado); }catch(e){}
+    try{ doc.addImage(logoDataUrl, "PNG", pageW/2 - logoLado/2, y - 8, logoLado, logoLado); }catch(e){}
+    y += logoLado + 16;
+  } else {
+    y += 10;
   }
-  doc.setFont("helvetica","bold"); doc.setFontSize(18);
-  doc.text("Cuentas Claras", textoX, y);
+  doc.setFont("helvetica","bold"); doc.setFontSize(24);
+  doc.text("Cuentas Claras", pageW/2, y, { align:"center" });
   doc.setFont("helvetica","normal"); doc.setFontSize(11); doc.setTextColor(90);
-  y += 20; doc.text("Resumen del periodo: " + tituloPeriodo, textoX, y);
+  y += 20; doc.text("Resumen del periodo: " + tituloPeriodo, pageW/2, y, { align:"center" });
   doc.setTextColor(0);
-  y += 28;
+  y += 30;
 
   doc.setFont("helvetica","bold"); doc.setFontSize(12);
   doc.text("Ingreso total: " + money(ingresoTotal), margen, y); y += 16;
@@ -2516,7 +2519,7 @@ async function ccGenerarPDFResumen(){
   doc.setDrawColor(230); doc.line(margen, y, pageW-margen, y); y += 12;
   doc.setFont("helvetica","normal");
   Object.keys(porRubro).sort().forEach(nombre=>{
-    if(y > 760){ doc.addPage(); y = 50; }
+    if(y > 730){ doc.addPage(); y = 50; }
     const d = porRubro[nombre];
     const dif = d.presupuestado - d.gastado;
     const pctRubro = gastadoTotal>0 ? d.gastado/gastadoTotal*100 : 0;
@@ -2537,21 +2540,36 @@ async function ccGenerarPDFResumen(){
     doc.setDrawColor(200); doc.line(margen, y, pageW-margen, y); y += 16;
     doc.setFont("helvetica","normal"); doc.setFontSize(10);
     deudasActivas.forEach(d=>{
-      if(y > 780){ doc.addPage(); y = 50; }
+      if(y > 730){ doc.addPage(); y = 50; }
       doc.text(String(d.nombre).slice(0,32) + "  ·  Saldo: " + money(d.saldo) + (d.pago?"  ·  Pago mensual: "+money(d.pago):""), margen, y);
       y += 16;
     });
   }
 
-  // Membrete + número de página en CADA hoja (antes solo aparecía en la última).
+  // Membrete + versículo (el mismo de la bienvenida de la app) + número de página,
+  // en CADA hoja (antes el membrete solo aparecía en la última). El bloque del
+  // versículo se calcula una sola vez para que quede igual de posicionado siempre.
   const totalPaginas = doc.internal.getNumberOfPages();
   const alturaHoja = doc.internal.pageSize.getHeight();
+  const versiculoTexto = '"Porque ¿quién de ustedes que quiera levantar una torre, no se sienta primero a calcular los costos, para ver si tiene todo lo que necesita?"';
+  const versiculoLineas = doc.splitTextToSize(versiculoTexto, pageW - margen*2 - 60);
+  const lineaSeparadoraY = alturaHoja - 34;
+  const filaMembreteY = alturaHoja - 18;
+  const alturaBloqueVersiculo = versiculoLineas.length*9 + 11;
+  const versiculoInicioY = lineaSeparadoraY - 8 - alturaBloqueVersiculo;
   for(let p=1; p<=totalPaginas; p++){
     doc.setPage(p);
-    doc.setDrawColor(225); doc.line(margen, alturaHoja-32, pageW-margen, alturaHoja-32);
-    doc.setFont("helvetica","normal"); doc.setFontSize(8); doc.setTextColor(150);
-    doc.text("Cuentas Claras · Generado " + new Date().toLocaleDateString("es-CO"), margen, alturaHoja-18);
-    doc.text("Página " + p + " de " + totalPaginas, pageW-margen, alturaHoja-18, { align:"right" });
+    let vy = versiculoInicioY;
+    doc.setFont("helvetica","italic"); doc.setFontSize(7.5); doc.setTextColor(140);
+    versiculoLineas.forEach(linea=>{ doc.text(linea, pageW/2, vy, { align:"center" }); vy += 9; });
+    doc.setFont("helvetica","bold");
+    doc.text("Lucas 14:28", pageW/2, vy+2, { align:"center" });
+    doc.setTextColor(150);
+
+    doc.setDrawColor(225); doc.line(margen, lineaSeparadoraY, pageW-margen, lineaSeparadoraY);
+    doc.setFont("helvetica","normal"); doc.setFontSize(8);
+    doc.text("Cuentas Claras · Generado " + new Date().toLocaleDateString("es-CO"), margen, filaMembreteY);
+    doc.text("Página " + p + " de " + totalPaginas, pageW-margen, filaMembreteY, { align:"right" });
   }
 
   const datauri = doc.output("datauristring");
