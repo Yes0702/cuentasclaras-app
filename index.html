@@ -4494,10 +4494,10 @@ function renderGastosFijos(){
           onclick="toggleGastoFijo('${esc(r.nombre)}')" aria-label="Marcar pagado"></button>
       </div>`;
     }).join("") +
-    `<div style="display:flex; justify-content:space-between; align-items:center; margin-top:12px; padding-top:10px; border-top:1px solid var(--line);">
-       <span class="s-sub">${pagados} de ${fijos.length} pagados en ${state.mesActivo}</span>
+    `<div style="display:flex; justify-content:space-between; align-items:center; margin-top:12px; padding-top:10px; border-top:1px solid #E9C9A3;">
+       <span class="s-sub" style="color:#7A4A18;">${pagados} de ${fijos.length} pagados en ${state.mesActivo}</span>
      </div>
-     <div class="hint" style="margin-top:6px;">Si pagaste un valor distinto, edítalo en la lista de gastos de abajo.</div>`;
+     <div class="hint" style="margin-top:6px; color:#9A6B33;">Si pagaste un valor distinto, edítalo en la lista de gastos de abajo.</div>`;
 }
 
 async function toggleGastoFijo(nombreRubro){
@@ -8873,6 +8873,7 @@ if(typeof supabase !== "undefined"){
     const { data, error } = await sbFamiliar.from("estado_app")
       .select("datos").eq("hogar_id", ccHogarId).maybeSingle();
     if(error || !data || !data.datos || Object.keys(data.datos).length===0) return false;
+    ccUltimoEstadoSubidoJSON = JSON.stringify(data.datos);
     state = hidratar(data.datos, defaultState());
     ccSaveStateOriginal();
     renderAll();
@@ -8882,6 +8883,7 @@ if(typeof supabase !== "undefined"){
   /* ---- Subir a la nube cada vez que se guarda localmente ---- */
   let ccSubiendoAhora = false;
   let ccSubidaPendiente = false;
+  let ccUltimoEstadoSubidoJSON = null;
   async function ccSubirANube(){
     if(!navigator.onLine){
       ccSubidaPendiente = true;
@@ -8890,6 +8892,7 @@ if(typeof supabase !== "undefined"){
     }
     if(ccSubiendoAhora){ ccSubidaPendiente = true; return; }
     ccSubiendoAhora = true;
+    const datosJSON = JSON.stringify(state);
     const { error } = await sbFamiliar.from("estado_app")
       .upsert({ hogar_id: ccHogarId, datos: state, actualizado_en: new Date().toISOString() });
     ccSubiendoAhora = false;
@@ -8898,6 +8901,7 @@ if(typeof supabase !== "undefined"){
       ccMostrarBannerSync("⚠️ No se pudo subir el último cambio. Reintentando...", "#C0392B", false);
       ccSubidaPendiente = true;
     } else {
+      ccUltimoEstadoSubidoJSON = datosJSON;
       ccMostrarBannerSync("☁️ Datos subidos a la nube", "#0B7D5C", true);
       if(ccSubidaPendiente){ ccSubidaPendiente = false; ccSubirANube(); }
     }
@@ -8913,6 +8917,35 @@ if(typeof supabase !== "undefined"){
   }
   function ccDesactivarSyncSaveState(){
     if(ccSaveStateOriginal){ window.saveState = ccSaveStateOriginal; ccSaveStateOriginal = null; }
+  }
+
+  /* ---- Tiempo real: si otro dispositivo de tu hogar sube un cambio, se
+     refleja aquí solo, sin tener que recargar la página. ---- */
+  let ccRealtimeChannel = null;
+  function ccActivarRealtime(){
+    if(ccRealtimeChannel) return;
+    ccRealtimeChannel = sbFamiliar.channel("estado_app_" + ccHogarId)
+      .on("postgres_changes", {
+        event: "UPDATE", schema: "public", table: "estado_app",
+        filter: "hogar_id=eq." + ccHogarId
+      }, (payload)=>{
+        const nuevo = payload.new && payload.new.datos;
+        if(!nuevo) return;
+        const nuevoJSON = JSON.stringify(nuevo);
+        // Si es el eco de lo que nosotros mismos acabamos de subir, no hay
+        // nada que actualizar — evita un refresco innecesario o un choque
+        // con lo que se esté escribiendo en ese momento.
+        if(nuevoJSON === ccUltimoEstadoSubidoJSON) return;
+        ccUltimoEstadoSubidoJSON = nuevoJSON;
+        state = hidratar(nuevo, defaultState());
+        ccSaveStateOriginal();
+        renderAll();
+        ccMostrarBannerSync("☁️ Se actualizó con un cambio de otro dispositivo de tu hogar", "#0B7D5C", true);
+      })
+      .subscribe();
+  }
+  function ccDesactivarRealtime(){
+    if(ccRealtimeChannel){ sbFamiliar.removeChannel(ccRealtimeChannel); ccRealtimeChannel = null; }
   }
 
   /* ---- Círculo familiar: lista de quién está adentro y sus permisos ---- */
@@ -9022,6 +9055,7 @@ if(typeof supabase !== "undefined"){
   window.ccCerrarSesionFamiliar = async function(){
     await sbFamiliar.auth.signOut();
     ccDesactivarSyncSaveState();
+    ccDesactivarRealtime();
     ccUserId = null; ccHogarId = null; ccEsAdmin = false;
     const conectado = document.getElementById("ccHogarConectado");
     const promo = document.getElementById("ccHogarPromo");
@@ -9073,6 +9107,7 @@ if(typeof supabase !== "undefined"){
     }
 
     ccActivarSyncSaveState();
+    ccActivarRealtime();
 
     if(navigator.onLine){
       const huboNube = await ccCargarDesdeNube();
