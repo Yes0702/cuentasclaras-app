@@ -8860,18 +8860,22 @@ if(typeof supabase !== "undefined"){
     const { error: errHogar } = await sbFamiliar.from("hogares")
       .insert({ id: nuevoHogarId, nombre: "Mi hogar", creado_por: ccUserId, tope_miembros: tope });
     if(errHogar) return { error: "creando hogar: " + errHogar.message };
+    // "nuevo: true" es la única situación en la que es seguro subir lo local
+    // como punto de partida — porque este hogar lo acabamos de crear nosotros
+    // mismos, así que no hay nada real en la nube que se pueda pisar.
 
     const { error: errMiembro } = await sbFamiliar.from("miembros_hogar")
       .insert({ hogar_id: nuevoHogarId, user_id: ccUserId, rol: "admin" });
     if(errMiembro) return { error: "uniéndote al hogar: " + errMiembro.message };
 
-    return { hogarId: nuevoHogarId, rol: "admin", advertencia: ccAdvertenciaInvitacion };
+    return { hogarId: nuevoHogarId, rol: "admin", advertencia: ccAdvertenciaInvitacion, nuevo: true };
   }
 
   /* ---- Traer lo que ya hay guardado en la nube para este hogar ---- */
   async function ccCargarDesdeNube(){
     const { data, error } = await sbFamiliar.from("estado_app")
       .select("datos").eq("hogar_id", ccHogarId).maybeSingle();
+    if(error) console.error("ccCargarDesdeNube:", error);
     if(error || !data || !data.datos || Object.keys(data.datos).length===0) return false;
     ccUltimoEstadoSubidoJSON = JSON.stringify(data.datos);
     state = hidratar(data.datos, defaultState());
@@ -9106,22 +9110,36 @@ if(typeof supabase !== "undefined"){
       ccCargarMiembros();
     }
 
-    ccActivarSyncSaveState();
-    ccActivarRealtime();
-
-    if(navigator.onLine){
-      const huboNube = await ccCargarDesdeNube();
-      if(huboNube){
-        ccMostrarBannerSync("☁️ Datos actualizados desde tu hogar", "#0B7D5C", true);
-      } else {
-        // Hogar recién creado, todavía sin nada en la nube: lo que ya hay
-        // guardado en este celular se sube tal cual, como punto de partida
-        // — así no hay que volver a escribir nada.
-        ccMostrarBannerSync("☁️ Conectado — subiendo lo que ya tienes en este celular", "#0B7D5C", true);
-        ccSubirANube();
+    // OJO: la sincronización (subir cambios, tiempo real) solo se activa
+    // DESPUÉS de confirmar de verdad el estado de la nube — nunca antes.
+    // Si se activara antes y algo guardara mientras tanto, subiría datos
+    // locales viejos y pisaría lo que ya había en la nube.
+    if(!navigator.onLine){
+      ccMostrarBannerSync("📴 Sin internet — viendo lo último guardado en este celular. Conéctate para sincronizar.", "#C56A12", true);
+      if(resultado.advertencia){
+        setTimeout(()=>{ ccMostrarBannerSync("⚠️ " + resultado.advertencia, "#C0392B", false); }, 3200);
       }
+      return true;
+    }
+
+    const huboNube = await ccCargarDesdeNube();
+    if(huboNube){
+      ccMostrarBannerSync("☁️ Datos actualizados desde tu hogar", "#0B7D5C", true);
+      ccActivarSyncSaveState();
+      ccActivarRealtime();
+    } else if(resultado.nuevo){
+      // Este hogar lo acabamos de crear nosotros mismos en esta misma
+      // conexión: no hay nada real en la nube todavía, así que es seguro
+      // subir lo que ya tienes en este celular como punto de partida.
+      ccMostrarBannerSync("☁️ Conectado — subiendo lo que ya tienes en este celular", "#0B7D5C", true);
+      ccActivarSyncSaveState();
+      ccActivarRealtime();
+      ccSubirANube();
     } else {
-      ccMostrarBannerSync("📴 Sin internet — viendo lo último guardado en este celular", "#C56A12", true);
+      // El hogar ya existía pero no se pudo confirmar su contenido (error de
+      // lectura, o RLS, etc.) — NO se activa la subida automática, para no
+      // arriesgarse a pisar datos reales de tu hogar por una falla pasajera.
+      ccMostrarBannerSync("⚠️ No se pudieron confirmar los datos de tu hogar en la nube. Vuelve a intentar con mejor conexión antes de seguir — por ahora no se sube ni se cambia nada.", "#C0392B", false);
     }
 
     if(resultado.advertencia){
