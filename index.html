@@ -613,6 +613,57 @@
   </div>
 </div>
 
+<!-- Modal para pedir el código de acceso a la nube (reemplaza prompt(), mismo motivo) -->
+<div id="ccCodigoAccesoModal" style="display:none; position:fixed; inset:0; z-index:9996; background:rgba(0,0,0,.55); align-items:center; justify-content:center; padding:24px;">
+  <div style="background:var(--surface); border-radius:20px; padding:24px; max-width:340px; width:100%; box-shadow:0 20px 50px rgba(0,0,0,.3);">
+    <div id="ccCodigoAccesoTexto" style="font-size:14px; color:var(--ink); line-height:1.55; margin-bottom:14px; text-align:left;">☁️ Para crear tu hogar en la nube necesitas un código de acceso. Si no tienes uno, contacta al administrador.</div>
+    <input type="text" id="ccCodigoAccesoInput" placeholder="Escribe tu código" autocomplete="off" style="margin-bottom:6px;">
+    <div id="ccCodigoAccesoMsg" style="font-size:12.5px; color:var(--red); min-height:16px; margin-bottom:8px; text-align:left;"></div>
+    <button onclick="ccCodigoAccesoResolver()" style="width:100%; background:var(--brand-dark); color:#fff; border:none; border-radius:12px; padding:13px; font-weight:800; cursor:pointer; margin-bottom:10px;">Continuar</button>
+    <button onclick="ccCodigoAccesoResolver(null)" style="width:100%; background:var(--surface-2); color:var(--ink); border:none; border-radius:12px; padding:13px; font-weight:700; cursor:pointer;">Ahora no</button>
+  </div>
+</div>
+
+<!-- Modal de login al Círculo familiar (correo -> código, sin contraseña) -->
+<div id="ccLoginModal" style="display:none; position:fixed; inset:0; z-index:9997; background:rgba(0,0,0,.55); align-items:center; justify-content:center; padding:24px;">
+  <div style="background:var(--surface); border-radius:20px; padding:26px 24px; max-width:360px; width:100%; box-shadow:0 20px 50px rgba(0,0,0,.3);">
+
+    <div id="ccLoginPasoCorreo">
+      <div style="text-align:center; margin-bottom:16px;">
+        <div style="font-size:36px;">☁️</div>
+        <div style="font-size:17px; font-weight:800; margin:6px 0 2px;">Conecta tu hogar</div>
+        <div class="hint" style="margin:0;">Sin contraseña — solo tu correo</div>
+      </div>
+      <label style="font-size:11px; color:var(--ink-soft); display:block; margin:0 0 6px; text-transform:uppercase; letter-spacing:.4px; font-weight:700;">Tu correo</label>
+      <input type="email" id="ccLoginCorreo" placeholder="tucorreo@ejemplo.com" autocomplete="email" inputmode="email" style="margin-bottom:6px;">
+      <div id="ccLoginMsgCorreo" style="font-size:12.5px; color:var(--red); min-height:16px; margin-bottom:8px;"></div>
+      <button id="ccLoginBtnEnviar" onclick="ccLoginEnviarCodigo()" style="width:100%; background:var(--brand); color:#fff; border:none; border-radius:12px; padding:13px; font-weight:800; cursor:pointer; box-shadow:0 6px 16px rgba(18,165,122,.28);">Enviar código</button>
+      <button onclick="ccLoginCerrarModal()" style="width:100%; margin-top:8px; background:var(--surface-2); color:var(--ink-soft); border:none; border-radius:12px; padding:11px; font-weight:700; cursor:pointer;">Cancelar</button>
+      <div class="hint" style="text-align:center; margin-top:12px;">Te mandamos un código por correo cada vez que entres.</div>
+    </div>
+
+    <div id="ccLoginPasoCodigo" style="display:none;">
+      <div style="text-align:center; margin-bottom:16px;">
+        <div style="font-size:36px;">🔢</div>
+        <div style="font-size:17px; font-weight:800; margin:6px 0 2px;">Escribe el código</div>
+        <div class="hint" style="margin:0;">Lo mandamos a <b id="ccLoginCorreoMostrado" style="color:var(--ink);"></b></div>
+      </div>
+      <label style="font-size:11px; color:var(--ink-soft); display:block; margin:0 0 6px; text-transform:uppercase; letter-spacing:.4px; font-weight:700;">Código</label>
+      <input type="text" id="ccLoginCodigo" placeholder="Código" inputmode="numeric" maxlength="10" autocomplete="one-time-code" style="font-family:var(--font-mono); letter-spacing:4px; text-align:center; font-size:20px; margin-bottom:6px;">
+      <div id="ccLoginMsgCodigo" style="font-size:12.5px; color:var(--red); min-height:16px; margin-bottom:8px;"></div>
+      <button id="ccLoginBtnVerificar" onclick="ccLoginVerificarCodigo()" style="width:100%; background:var(--brand); color:#fff; border:none; border-radius:12px; padding:13px; font-weight:800; cursor:pointer; box-shadow:0 6px 16px rgba(18,165,122,.28);">Verificar y entrar</button>
+      <button onclick="ccLoginReenviar()" style="width:100%; margin-top:8px; background:transparent; color:var(--ink-soft); border:none; border-radius:12px; padding:10px; font-weight:700; cursor:pointer;">Reenviar código</button>
+      <button onclick="ccLoginVolverCorreo()" style="width:100%; background:transparent; color:var(--ink-soft); border:none; border-radius:12px; padding:6px; font-weight:700; cursor:pointer;">← Usar otro correo</button>
+    </div>
+
+  </div>
+</div>
+
+<!-- Aviso fijo arriba con el estado de la sincronización con la nube -->
+<div id="ccSyncBanner" style="position:fixed; left:0; right:0; top:0; z-index:9994; text-align:center;
+     font-size:12.5px; font-weight:700; padding:8px 12px; color:#fff; display:none;
+     box-shadow:0 2px 8px rgba(0,0,0,.15);"></div>
+
 <div id="phone">
 
   <header class="topbar">
@@ -1352,7 +1403,7 @@
       </div>
 
       <h2 class="section-title">Tu hogar<div class="rule"></div></h2>
-      <div class="card" style="background:linear-gradient(155deg,var(--brand-soft),var(--surface)); border:1.5px solid #BFE9DA; text-align:center;">
+      <div class="card" id="ccHogarPromo" style="background:linear-gradient(155deg,var(--brand-soft),var(--surface)); border:1.5px solid #BFE9DA; text-align:center;">
         <div style="display:inline-block; background:#FDEFE0; color:#8A5A1F; font-size:10px; font-weight:800; padding:3px 8px; border-radius:99px; margin-bottom:10px; letter-spacing:.03em;">NUEVO</div>
         <div style="font-size:34px; margin-bottom:6px;">☁️</div>
         <div style="font-size:15.5px; font-weight:800; color:var(--brand-dark); margin-bottom:4px;">Círculo familiar</div>
@@ -1360,10 +1411,32 @@
           Sincroniza tu presupuesto con tu celular, tu compu y tu familia — abre la misma cuenta desde cualquier equipo.<br>
           <b style="color:var(--brand-dark);">Gratis momentáneamente.</b>
         </div>
-        <button class="btn-primary" style="width:100%; margin:0;" onclick="abrirExterno('https://cuentasclaras-familiar.vercel.app/')">Conectar mi hogar →</button>
+        <button class="btn-primary" style="width:100%; margin:0;" onclick="ccLoginAbrirModal()">Conectar mi hogar →</button>
         <div class="hint" style="margin-top:10px;">
-          Se abre en el navegador y entras con un código que te llega al correo, sin contraseña. Es una cuenta nueva en la nube: no trae automáticamente lo que ya tienes guardado en este celular.
+          Entras con un código que te llega al correo, sin contraseña. Si ya tienes datos guardados en este celular, se suben a la nube apenas conectes — no hay que volver a escribirlos.
         </div>
+      </div>
+
+      <div class="card" id="ccHogarConectado" style="display:none;">
+        <div class="hint" style="margin-bottom:10px;">☁️ Conectado como <b id="ccCorreoSesion" style="color:var(--ink);">—</b></div>
+        <div id="ccRolHogar" style="display:none; margin-bottom:10px; padding:9px 12px; border-radius:10px; font-size:12.5px; font-weight:700;"></div>
+
+        <div id="ccCardCirculoFamiliar" style="display:none; margin-top:4px;">
+          <div class="hint" style="margin-bottom:10px;">Invita a alguien de tu hogar. Va a entrar con su propio correo — puedes controlar qué ve y qué puede editar desde la lista de abajo.</div>
+          <button class="btn-primary" style="margin-top:2px; width:100%;" onclick="ccGenerarInvitacion()">🔗 Generar link de invitación</button>
+          <div id="ccInvitacionResultado" style="display:none; margin-top:12px; padding:12px; background:var(--brand-soft); border:1px solid #BFE9DA; border-radius:11px;">
+            <div class="hint" style="color:var(--brand-dark); font-weight:600; margin-bottom:8px;">Comparte este link (funciona una sola vez):</div>
+            <div id="ccInvitacionLink" style="font-family:var(--font-mono); font-size:11.5px; word-break:break-all; background:var(--surface); padding:10px; border-radius:8px; margin-bottom:8px;"></div>
+            <button class="btn-outline" style="width:100%; margin-top:0;" onclick="ccCopiarLinkInvitacion()">Copiar link</button>
+          </div>
+          <div id="ccListaMiembros" style="margin-top:14px;"></div>
+          <div id="ccTopeInfo" style="display:none; margin-top:12px; padding-top:12px; border-top:1px solid var(--line);">
+            <div class="hint" id="ccTopeTexto" style="margin-bottom:8px;"></div>
+            <button class="btn-outline" id="ccBtnAmpliarCupo" style="width:100%; margin-top:0;" onclick="ccAmpliarCupo()">Ampliar cupo del hogar</button>
+          </div>
+        </div>
+
+        <button class="btn-ghost" style="width:100%; margin-top:14px;" onclick="ccCerrarSesionFamiliar()">Cerrar sesión de la nube</button>
       </div>
 
       <div id="bloqueDonacion"></div>
@@ -8601,6 +8674,436 @@ if("serviceWorker" in navigator){
     ccRecargado = true;
     location.reload();
   });
+}
+</script>
+
+<!-- =====================================================================
+     SINCRONIZACIÓN CON LA NUBE (Supabase) — círculo familiar
+     Capa OPCIONAL: no toca nada de la lógica de arriba. Si nadie conecta
+     su hogar, esto no hace nada y la app sigue 100% local como siempre.
+     Solo cuando alguien conecta, se envuelve saveState() para que, además
+     de guardar en este dispositivo, también suba el mismo estado a la nube.
+     ===================================================================== -->
+<script>
+  // Si el botón se toca sin internet (o antes de que cargue el SDK de abajo),
+  // que avise en vez de romperse — se reemplaza por la versión real más abajo.
+  window.ccLoginAbrirModal = function(){ toast("Necesitas conexión a internet para conectar tu hogar. Intenta de nuevo."); };
+</script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+<script>
+if(typeof supabase !== "undefined"){
+(function(){
+  const SUPABASE_URL = "https://xlzlxjbxqkpdudojcgyq.supabase.co";
+  const SUPABASE_KEY = "sb_publishable_M3hizPbgXWU1_n5bTuyCkA_Yx1uEXRb";
+  const sbFamiliar = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+  const banner = document.getElementById("ccSyncBanner");
+  function ccMostrarBannerSync(texto, color, autoOcultar){
+    if(!banner) return;
+    banner.textContent = texto;
+    banner.style.background = color;
+    banner.style.display = "block";
+    clearTimeout(banner._t);
+    if(autoOcultar) banner._t = setTimeout(()=>{ banner.style.display = "none"; }, 2800);
+  }
+
+  let ccUserId = null, ccHogarId = null, ccEsAdmin = false;
+  let ccSaveStateOriginal = null;
+
+  /* ---- Si venía de un link de invitación (?invite=codigo) ---- */
+  (function guardarInvitacionSiViene(){
+    const codigo = new URLSearchParams(location.search).get("invite");
+    if(codigo) localStorage.setItem("cc_invite_pendiente", codigo);
+  })();
+
+  /* ---- Modal de login: correo -> código (sin contraseña) ---- */
+  let ccLoginCorreoActual = "";
+  let ccLoginReenviarBloqueadoHasta = 0;
+  function ccValidarCorreo(v){ return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v); }
+
+  window.ccLoginAbrirModal = function(){
+    document.getElementById("ccLoginPasoCorreo").style.display = "block";
+    document.getElementById("ccLoginPasoCodigo").style.display = "none";
+    document.getElementById("ccLoginCorreo").value = "";
+    document.getElementById("ccLoginMsgCorreo").textContent = "";
+    document.getElementById("ccLoginModal").style.display = "flex";
+  };
+  window.ccLoginCerrarModal = function(){
+    document.getElementById("ccLoginModal").style.display = "none";
+  };
+  window.ccLoginEnviarCodigo = async function(){
+    const correo = document.getElementById("ccLoginCorreo").value.trim();
+    const msg = document.getElementById("ccLoginMsgCorreo");
+    msg.textContent = "";
+    if(!ccValidarCorreo(correo)){ msg.textContent = "Escribe un correo válido."; return; }
+    const btn = document.getElementById("ccLoginBtnEnviar");
+    btn.disabled = true; const textoOrig = btn.textContent; btn.textContent = "Enviando...";
+    const { error } = await sbFamiliar.auth.signInWithOtp({ email: correo, options: { shouldCreateUser: true } });
+    btn.disabled = false; btn.textContent = textoOrig;
+    if(error){ msg.textContent = "No se pudo enviar el código: " + error.message; return; }
+    ccLoginCorreoActual = correo;
+    document.getElementById("ccLoginCorreoMostrado").textContent = correo;
+    document.getElementById("ccLoginCodigo").value = "";
+    document.getElementById("ccLoginMsgCodigo").textContent = "";
+    ccLoginReenviarBloqueadoHasta = Date.now() + 30000;
+    document.getElementById("ccLoginPasoCorreo").style.display = "none";
+    document.getElementById("ccLoginPasoCodigo").style.display = "block";
+    document.getElementById("ccLoginCodigo").focus();
+  };
+  window.ccLoginVerificarCodigo = async function(){
+    const codigo = document.getElementById("ccLoginCodigo").value.trim();
+    const msg = document.getElementById("ccLoginMsgCodigo");
+    msg.style.color = "var(--red)";
+    msg.textContent = "";
+    if(codigo.length < 4){ msg.textContent = "Escribe el código completo que te llegó al correo."; return; }
+    const btn = document.getElementById("ccLoginBtnVerificar");
+    btn.disabled = true; const textoOrig = btn.textContent; btn.textContent = "Verificando...";
+    const { error } = await sbFamiliar.auth.verifyOtp({ email: ccLoginCorreoActual, token: codigo, type: "email" });
+    btn.disabled = false; btn.textContent = textoOrig;
+    if(error){ msg.textContent = "Código incorrecto o vencido. " + error.message; return; }
+    document.getElementById("ccLoginModal").style.display = "none";
+    await ccConectarHogar();
+  };
+  window.ccLoginReenviar = async function(){
+    const msg = document.getElementById("ccLoginMsgCodigo");
+    if(Date.now() < ccLoginReenviarBloqueadoHasta){
+      const seg = Math.ceil((ccLoginReenviarBloqueadoHasta - Date.now())/1000);
+      msg.style.color = "var(--red)";
+      msg.textContent = `Espera ${seg}s para reenviar.`;
+      return;
+    }
+    msg.textContent = "";
+    const { error } = await sbFamiliar.auth.signInWithOtp({ email: ccLoginCorreoActual });
+    if(error){ msg.style.color = "var(--red)"; msg.textContent = "No se pudo reenviar: " + error.message; return; }
+    ccLoginReenviarBloqueadoHasta = Date.now() + 30000;
+    msg.style.color = "var(--brand-dark)";
+    msg.textContent = "Código reenviado. Revisa tu correo.";
+  };
+  window.ccLoginVolverCorreo = function(){
+    document.getElementById("ccLoginMsgCorreo").textContent = "";
+    document.getElementById("ccLoginPasoCorreo").style.display = "block";
+    document.getElementById("ccLoginPasoCodigo").style.display = "none";
+  };
+
+  /* ---- Modal para pedir el código de acceso a la nube (reemplaza prompt()) ---- */
+  let ccCodigoAccesoCb = null;
+  window.ccPedirCodigoAccesoAsync = function(mensajeError, textoIntro){
+    return new Promise(resolve=>{
+      ccCodigoAccesoCb = resolve;
+      document.getElementById("ccCodigoAccesoInput").value = "";
+      document.getElementById("ccCodigoAccesoMsg").textContent = mensajeError || "";
+      document.getElementById("ccCodigoAccesoTexto").textContent = textoIntro || "☁️ Para crear tu hogar en la nube necesitas un código de acceso. Si no tienes uno, contacta al administrador.";
+      document.getElementById("ccCodigoAccesoModal").style.display = "flex";
+      setTimeout(()=>document.getElementById("ccCodigoAccesoInput").focus(), 50);
+    });
+  };
+  window.ccCodigoAccesoResolver = function(valorForzado){
+    if(valorForzado !== null){
+      const valor = document.getElementById("ccCodigoAccesoInput").value.trim();
+      if(!valor){
+        document.getElementById("ccCodigoAccesoMsg").textContent = "Escribe el código antes de continuar.";
+        return;
+      }
+      document.getElementById("ccCodigoAccesoModal").style.display = "none";
+      const cb = ccCodigoAccesoCb; ccCodigoAccesoCb = null;
+      if(cb) cb(valor);
+    } else {
+      document.getElementById("ccCodigoAccesoModal").style.display = "none";
+      const cb = ccCodigoAccesoCb; ccCodigoAccesoCb = null;
+      if(cb) cb(null);
+    }
+  };
+
+  /* ---- Hogar: ya tiene uno, se une por invitación, o se le crea el suyo ---- */
+  async function ccResolverHogarFamiliar(){
+    const { data: miembro, error: errSelect } = await sbFamiliar.from("miembros_hogar")
+      .select("hogar_id, rol, permisos").eq("user_id", ccUserId).limit(1).maybeSingle();
+    if(errSelect) return { error: "leyendo miembros_hogar: " + errSelect.message };
+    if(miembro) return { hogarId: miembro.hogar_id, rol: miembro.rol, permisos: miembro.permisos };
+
+    let ccAdvertenciaInvitacion = null;
+    const codigoInvitacion = localStorage.getItem("cc_invite_pendiente");
+    if(codigoInvitacion){
+      const { data: canje, error: errCanje } = await sbFamiliar.rpc("canjear_invitacion", { codigo_input: codigoInvitacion });
+      if(!errCanje){
+        localStorage.removeItem("cc_invite_pendiente");
+        if(canje && canje.length > 0) return { hogarId: canje[0].hogar_id, rol: canje[0].rol, permisos: canje[0].permisos };
+        ccAdvertenciaInvitacion = "La invitación no sirvió (inválida o ya usada) — se creó un hogar nuevo";
+      } else {
+        console.error("canjear_invitacion falló, se crea hogar propio:", errCanje);
+        ccAdvertenciaInvitacion = "Error al canjear invitación: " + errCanje.message;
+      }
+    }
+
+    // Para crear un hogar propio (no venir de una invitación) hace falta un
+    // código de acceso — los invitados a un hogar que ya existe NO lo necesitan.
+    let codigoAcceso = (localStorage.getItem("cc_codigo_acceso") || "").trim();
+    let tope = null;
+    let mensajeErrorCodigo = "";
+    while(tope === null){
+      if(!codigoAcceso){
+        codigoAcceso = await ccPedirCodigoAccesoAsync(mensajeErrorCodigo);
+        if(!codigoAcceso) return { necesitaCodigo: true };
+      }
+      const { data, error: errCodigo } = await sbFamiliar.rpc("canjear_codigo_acceso", { codigo_input: codigoAcceso });
+      if(errCodigo) return { necesitaCodigo: true, error: errCodigo.message };
+      if(data === null || data === undefined){
+        mensajeErrorCodigo = "Ese código no es válido o ya se usó. Intenta de nuevo.";
+        codigoAcceso = "";
+        continue;
+      }
+      tope = data;
+    }
+    localStorage.removeItem("cc_codigo_acceso");
+
+    const nuevoHogarId = crypto.randomUUID();
+    const { error: errHogar } = await sbFamiliar.from("hogares")
+      .insert({ id: nuevoHogarId, nombre: "Mi hogar", creado_por: ccUserId, tope_miembros: tope });
+    if(errHogar) return { error: "creando hogar: " + errHogar.message };
+
+    const { error: errMiembro } = await sbFamiliar.from("miembros_hogar")
+      .insert({ hogar_id: nuevoHogarId, user_id: ccUserId, rol: "admin" });
+    if(errMiembro) return { error: "uniéndote al hogar: " + errMiembro.message };
+
+    return { hogarId: nuevoHogarId, rol: "admin", advertencia: ccAdvertenciaInvitacion };
+  }
+
+  /* ---- Traer lo que ya hay guardado en la nube para este hogar ---- */
+  async function ccCargarDesdeNube(){
+    const { data, error } = await sbFamiliar.from("estado_app")
+      .select("datos").eq("hogar_id", ccHogarId).maybeSingle();
+    if(error || !data || !data.datos || Object.keys(data.datos).length===0) return false;
+    state = hidratar(data.datos, defaultState());
+    ccSaveStateOriginal();
+    renderAll();
+    return true;
+  }
+
+  /* ---- Subir a la nube cada vez que se guarda localmente ---- */
+  let ccSubiendoAhora = false;
+  let ccSubidaPendiente = false;
+  async function ccSubirANube(){
+    if(!navigator.onLine){
+      ccSubidaPendiente = true;
+      ccMostrarBannerSync("📴 Sin internet — tus cambios quedan guardados en este celular, se suben cuando vuelva la conexión", "#C56A12", false);
+      return;
+    }
+    if(ccSubiendoAhora){ ccSubidaPendiente = true; return; }
+    ccSubiendoAhora = true;
+    const { error } = await sbFamiliar.from("estado_app")
+      .upsert({ hogar_id: ccHogarId, datos: state, actualizado_en: new Date().toISOString() });
+    ccSubiendoAhora = false;
+    if(error){
+      console.error(error);
+      ccMostrarBannerSync("⚠️ No se pudo subir el último cambio. Reintentando...", "#C0392B", false);
+      ccSubidaPendiente = true;
+    } else {
+      ccMostrarBannerSync("☁️ Datos subidos a la nube", "#0B7D5C", true);
+      if(ccSubidaPendiente){ ccSubidaPendiente = false; ccSubirANube(); }
+    }
+  }
+
+  function ccActivarSyncSaveState(){
+    if(ccSaveStateOriginal) return; // ya estaba activo
+    ccSaveStateOriginal = window.saveState;
+    window.saveState = function(){
+      ccSaveStateOriginal();
+      ccSubirANube();
+    };
+  }
+  function ccDesactivarSyncSaveState(){
+    if(ccSaveStateOriginal){ window.saveState = ccSaveStateOriginal; ccSaveStateOriginal = null; }
+  }
+
+  /* ---- Círculo familiar: lista de quién está adentro y sus permisos ---- */
+  window.ccCargarMiembros = async function(){
+    const cont = document.getElementById("ccListaMiembros");
+    if(!cont) return;
+    const { data, error } = await sbFamiliar.rpc("obtener_miembros_hogar");
+    if(error){
+      console.error(error);
+      cont.innerHTML = '<div class="hint" style="color:var(--red); font-weight:600;">⚠️ No se pudo cargar el círculo: ' + error.message + '</div>';
+      return;
+    }
+    cont.innerHTML = (data && data.length ? data : []).map(function(m){
+      const permisos = m.permisos || {};
+      const puedeEditar = permisos.editar !== false;
+      const puedeVerDeudas = permisos.ver_deudas !== false;
+      const puedeVerIngresos = permisos.ver_ingresos !== false;
+      const esAdmin = m.rol === "admin";
+      return '<div style="border-top:1px solid var(--line); padding:12px 0;">'
+        + '<div style="font-weight:700; font-size:13.5px;">' + m.correo + (m.es_yo ? ' (tú)' : '') + '</div>'
+        + '<div class="hint" style="margin:2px 0 8px;">' + (esAdmin ? 'Administrador — acceso total' : 'Integrante') + '</div>'
+        + (esAdmin ? '' :
+            '<div class="switch-row">'
+              + '<div style="min-width:0; flex:1;"><div class="s-txt">Puede editar y agregar</div></div>'
+              + '<button class="switch ' + (puedeEditar ? 'on' : '') + '" style="flex:0 0 auto;" '
+              + 'onclick="ccCambiarPermiso(\'' + m.user_id + '\',\'editar\',' + (puedeEditar ? 'false' : 'true') + ')" '
+              + 'aria-label="Puede editar y agregar"></button>'
+            + '</div>'
+            + '<div class="switch-row">'
+              + '<div style="min-width:0; flex:1;"><div class="s-txt">Puede ver deudas</div></div>'
+              + '<button class="switch ' + (puedeVerDeudas ? 'on' : '') + '" style="flex:0 0 auto;" '
+              + 'onclick="ccCambiarPermiso(\'' + m.user_id + '\',\'ver_deudas\',' + (puedeVerDeudas ? 'false' : 'true') + ')" '
+              + 'aria-label="Puede ver deudas"></button>'
+            + '</div>'
+            + '<div class="switch-row">'
+              + '<div style="min-width:0; flex:1;"><div class="s-txt">Puede ver ingresos</div></div>'
+              + '<button class="switch ' + (puedeVerIngresos ? 'on' : '') + '" style="flex:0 0 auto;" '
+              + 'onclick="ccCambiarPermiso(\'' + m.user_id + '\',\'ver_ingresos\',' + (puedeVerIngresos ? 'false' : 'true') + ')" '
+              + 'aria-label="Puede ver ingresos"></button>'
+            + '</div>')
+        + '</div>';
+    }).join("") || '<div class="hint">Todavía no hay nadie más en tu hogar.</div>';
+
+    const usados = (data || []).length;
+    const { data: hogarRow } = await sbFamiliar.from("hogares").select("tope_miembros").eq("id", ccHogarId).maybeSingle();
+    const tope = hogarRow ? hogarRow.tope_miembros : null;
+    const topeInfo = document.getElementById("ccTopeInfo");
+    const topeTexto = document.getElementById("ccTopeTexto");
+    const btnAmpliar = document.getElementById("ccBtnAmpliarCupo");
+    if(topeInfo && topeTexto){
+      if(tope == null){
+        topeInfo.style.display = "none";
+      } else {
+        topeInfo.style.display = "block";
+        topeTexto.textContent = "Cupo: " + usados + " de " + tope + " integrantes usados.";
+        if(btnAmpliar) btnAmpliar.style.display = "block";
+      }
+    }
+  };
+
+  window.ccGenerarInvitacion = async function(){
+    const { data, error } = await sbFamiliar.from("invitaciones")
+      .insert({ hogar_id: ccHogarId, creado_por: ccUserId })
+      .select("codigo").single();
+    if(error){
+      toast("No se pudo crear la invitación: " + error.message);
+      return;
+    }
+    const link = location.origin + location.pathname.replace(/[^/]*$/, "") + "?invite=" + data.codigo;
+    document.getElementById("ccInvitacionLink").textContent = link;
+    document.getElementById("ccInvitacionResultado").style.display = "block";
+  };
+  window.ccCopiarLinkInvitacion = function(){
+    const link = document.getElementById("ccInvitacionLink").textContent;
+    if(link) copiarTexto(link, "Link de invitación");
+  };
+
+  window.ccAmpliarCupo = async function(){
+    let mensajeError = "";
+    while(true){
+      const codigo = await ccPedirCodigoAccesoAsync(mensajeError, "☁️ Ingresa un código de ampliación para agregar más cupo a tu hogar.");
+      if(!codigo) return;
+      const { data: nuevoTope, error } = await sbFamiliar.rpc("ampliar_cupo_hogar", { codigo_input: codigo });
+      if(error){
+        mensajeError = "No se pudo ampliar: " + error.message;
+        continue;
+      }
+      if(nuevoTope === null || nuevoTope === undefined){
+        mensajeError = "Ese código no es válido o ya se usó. Intenta de nuevo.";
+        continue;
+      }
+      toast("Cupo ampliado a " + nuevoTope + " integrantes");
+      ccCargarMiembros();
+      return;
+    }
+  };
+
+  window.ccCambiarPermiso = async function(userId, campo, valor){
+    const { data: miembros } = await sbFamiliar.rpc("obtener_miembros_hogar");
+    const actual = (miembros || []).find(function(m){ return m.user_id === userId; });
+    const nuevosPermisos = Object.assign({}, actual ? actual.permisos : {}, { [campo]: valor });
+    const { error } = await sbFamiliar.rpc("actualizar_permisos_miembro", { miembro_id: userId, nuevos_permisos: nuevosPermisos });
+    if(error){ toast("No se pudo cambiar: " + error.message); return; }
+    ccCargarMiembros();
+  };
+
+  window.ccCerrarSesionFamiliar = async function(){
+    await sbFamiliar.auth.signOut();
+    ccDesactivarSyncSaveState();
+    ccUserId = null; ccHogarId = null; ccEsAdmin = false;
+    const conectado = document.getElementById("ccHogarConectado");
+    const promo = document.getElementById("ccHogarPromo");
+    if(conectado) conectado.style.display = "none";
+    if(promo) promo.style.display = "block";
+    ccMostrarBannerSync("Se cerró la sesión de la nube — tus datos siguen guardados en este celular", "#4A5A50", true);
+  };
+
+  /* ---- Conectar: resuelve el hogar, trae o sube los datos, activa el sync ---- */
+  async function ccConectarHogar(){
+    const { data: sesionData } = await sbFamiliar.auth.getSession();
+    if(!sesionData.session) return false;
+    ccUserId = sesionData.session.user.id;
+
+    const resultado = await ccResolverHogarFamiliar();
+    if(!resultado.hogarId){
+      if(resultado.necesitaCodigo){
+        ccMostrarBannerSync("☁️ " + (resultado.error || "Necesitas un código de acceso para la nube") + " — tus datos se guardan solo en este celular por ahora", "#C56A12", false);
+      } else if(resultado.error){
+        ccMostrarBannerSync("⚠️ " + resultado.error, "#C0392B", false);
+      }
+      return false;
+    }
+    ccHogarId = resultado.hogarId;
+    ccEsAdmin = resultado.rol === "admin";
+
+    const correoEl = document.getElementById("ccCorreoSesion");
+    if(correoEl) correoEl.textContent = sesionData.session.user.email || "—";
+    const rolEl = document.getElementById("ccRolHogar");
+    if(rolEl){
+      rolEl.style.display = "block";
+      if(ccEsAdmin){
+        rolEl.textContent = "👑 Eres el administrador de este hogar";
+        rolEl.style.background = "var(--brand-soft)"; rolEl.style.color = "var(--brand-dark)";
+      } else {
+        rolEl.textContent = "👥 Fuiste invitado a este hogar (no eres el administrador)";
+        rolEl.style.background = "var(--surface-2)"; rolEl.style.color = "var(--ink-soft)";
+      }
+    }
+
+    const promo = document.getElementById("ccHogarPromo");
+    const conectado = document.getElementById("ccHogarConectado");
+    if(promo) promo.style.display = "none";
+    if(conectado) conectado.style.display = "block";
+    if(ccEsAdmin){
+      const card = document.getElementById("ccCardCirculoFamiliar");
+      if(card) card.style.display = "block";
+      ccCargarMiembros();
+    }
+
+    ccActivarSyncSaveState();
+
+    if(navigator.onLine){
+      const huboNube = await ccCargarDesdeNube();
+      if(huboNube){
+        ccMostrarBannerSync("☁️ Datos actualizados desde tu hogar", "#0B7D5C", true);
+      } else {
+        // Hogar recién creado, todavía sin nada en la nube: lo que ya hay
+        // guardado en este celular se sube tal cual, como punto de partida
+        // — así no hay que volver a escribir nada.
+        ccMostrarBannerSync("☁️ Conectado — subiendo lo que ya tienes en este celular", "#0B7D5C", true);
+        ccSubirANube();
+      }
+    } else {
+      ccMostrarBannerSync("📴 Sin internet — viendo lo último guardado en este celular", "#C56A12", true);
+    }
+
+    if(resultado.advertencia){
+      setTimeout(()=>{ ccMostrarBannerSync("⚠️ " + resultado.advertencia, "#C0392B", false); }, 3200);
+    }
+    return true;
+  }
+
+  /* ---- Si ya había sesión guardada (entró antes), reconecta solo, sin
+     pedir nada — y si no hay sesión, no pasa nada: la app sigue 100% local. ---- */
+  (async function ccResumirSesionSilenciosa(){
+    try{
+      const { data } = await sbFamiliar.auth.getSession();
+      if(data.session) await ccConectarHogar();
+    }catch(e){ /* sin internet o sin sesión: la app sigue funcionando local */ }
+  })();
+})();
 }
 </script>
 </body>
