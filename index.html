@@ -583,6 +583,46 @@
   </div>
 </div>
 
+<!-- Aceptar Términos y Privacidad: aparece una sola vez, justo después de la bienvenida -->
+<div id="ccTerminos" style="display:none; position:fixed; inset:0; z-index:9998;
+     background:var(--surface); flex-direction:column; overflow-y:auto;">
+  <div style="background:linear-gradient(140deg,#13B183 0%,#0F8F6B 45%,#0A5F49 100%); color:#fff; padding:30px 24px 22px; text-align:center;">
+    <div style="font-size:36px; margin-bottom:6px;">📋</div>
+    <div style="font-size:18px; font-weight:800; margin-bottom:4px;">Antes de empezar</div>
+    <div style="font-size:12.5px; opacity:.9;">Solo toma un momento</div>
+  </div>
+  <div style="flex:1; padding:22px 24px;">
+    <div style="font-size:13.5px; color:var(--ink-soft); line-height:1.55; margin-bottom:18px;">
+      Para usar Cuentas Claras necesitamos que leas y aceptes estos dos documentos:
+    </div>
+    <div onclick="ccAbrirTerminosDoc()" style="display:flex; align-items:center; justify-content:space-between; gap:10px; background:var(--surface-2); border:1.5px solid var(--line); border-radius:12px; padding:14px; margin-bottom:10px; cursor:pointer;">
+      <div>
+        <div style="font-size:13.5px; font-weight:700; color:var(--ink);">📄 Términos y Condiciones</div>
+        <div style="font-size:11px; color:var(--ink-mute); margin-top:2px; font-weight:500;">Cómo funciona la app y sus límites</div>
+      </div>
+      <div style="color:var(--brand-dark); font-size:16px;">↗</div>
+    </div>
+    <div onclick="ccAbrirPrivacidadDoc()" style="display:flex; align-items:center; justify-content:space-between; gap:10px; background:var(--surface-2); border:1.5px solid var(--line); border-radius:12px; padding:14px; margin-bottom:10px; cursor:pointer;">
+      <div>
+        <div style="font-size:13.5px; font-weight:700; color:var(--ink);">🔒 Política de Privacidad</div>
+        <div style="font-size:11px; color:var(--ink-mute); margin-top:2px; font-weight:500;">Qué datos se guardan y dónde</div>
+      </div>
+      <div style="color:var(--brand-dark); font-size:16px;">↗</div>
+    </div>
+  </div>
+  <div style="padding:16px 24px 24px; border-top:1px solid var(--line);">
+    <div onclick="ccToggleAceptoTerminos()" style="display:flex; align-items:flex-start; gap:10px; margin-bottom:16px; cursor:pointer;">
+      <div id="ccTerminosCheckbox" style="width:22px; height:22px; border-radius:6px; border:2px solid var(--line); flex-shrink:0; display:flex; align-items:center; justify-content:center; margin-top:1px; font-size:14px; color:#fff;"></div>
+      <div style="font-size:12.5px; color:var(--ink); line-height:1.45;">He leído y acepto los <b style="color:var(--brand-dark);">Términos y Condiciones</b> y la <b style="color:var(--brand-dark);">Política de Privacidad</b> de Cuentas Claras.</div>
+    </div>
+    <button id="ccTerminosBtn" onclick="ccAceptarTerminos()" disabled
+      style="width:100%; border:none; border-radius:12px; padding:14px; font-size:15px; font-weight:800; cursor:not-allowed; background:var(--surface-2); color:var(--ink-mute);">
+      Aceptar y continuar
+    </button>
+    <div style="font-size:11px; color:var(--ink-mute); text-align:center; margin-top:10px; line-height:1.4;">Si no aceptas, no vas a poder usar la aplicación.</div>
+  </div>
+</div>
+
 <!-- Aviso de ayuda por WhatsApp (se muestra al entrar a la app) -->
 <div id="ccAyuda" style="display:none; position:fixed; inset:0; z-index:9995; background:rgba(0,0,0,.55); align-items:center; justify-content:center; padding:24px;">
   <div style="background:var(--surface); border-radius:20px; padding:26px 24px; max-width:340px; width:100%; text-align:center; box-shadow:0 20px 50px rgba(0,0,0,.3);">
@@ -8303,10 +8343,12 @@ function ccMostrarAyudaSiListo(){
   if(ccAyudaMostrada) return;
   const lock = document.getElementById("ccLock");
   const welcome = document.getElementById("ccWelcome");
+  const terminos = document.getElementById("ccTerminos");
   const lockVisible = lock && lock.style.display !== "none";
   const welcomeVisible = welcome && welcome.style.display !== "none";
-  if(lockVisible || welcomeVisible){
-    setTimeout(ccMostrarAyudaSiListo, 500);   // espera a que cierren bienvenida/bloqueo
+  const terminosVisible = terminos && terminos.style.display !== "none";
+  if(lockVisible || welcomeVisible || terminosVisible){
+    setTimeout(ccMostrarAyudaSiListo, 500);   // espera a que cierren bienvenida/términos/bloqueo
     return;
   }
   ccAyudaMostrada = true;
@@ -8377,7 +8419,47 @@ function ccCerrarWelcome(){
   try{ localStorage.setItem(CC_WELCOME_KEY, "1"); }catch(e){}
   const el = document.getElementById("ccWelcome");
   if(el) el.style.display = "none";
-  showView("deudas");   // primero deudas, para saber el panorama real
+  if(ccYaAceptoTerminos()){
+    showView("deudas");   // primero deudas, para saber el panorama real
+    mostrarGuiaDeudas();
+  } else {
+    ccMostrarTerminos();
+  }
+}
+
+/* ---- Aceptar Términos y Condiciones / Política de Privacidad: una sola
+   vez, justo después de la bienvenida (o al abrir de nuevo si se cerró la
+   app a medio camino, antes de aceptar). ---- */
+const CC_TERMINOS_KEY = "cc_terminos_aceptados";
+function ccYaAceptoTerminos(){
+  try{ return localStorage.getItem(CC_TERMINOS_KEY) === "1"; }catch(e){ return false; }
+}
+function ccMostrarTerminos(){
+  const el = document.getElementById("ccTerminos");
+  if(el) el.style.display = "flex";
+}
+function ccAbrirTerminosDoc(){ abrirExterno("https://yes0702.github.io/cuentasclaras/terminos.html"); }
+function ccAbrirPrivacidadDoc(){ abrirExterno("https://yes0702.github.io/cuentasclaras/privacidad.html"); }
+function ccToggleAceptoTerminos(){
+  const chk = document.getElementById("ccTerminosCheckbox");
+  const btn = document.getElementById("ccTerminosBtn");
+  const marcado = chk.textContent !== "✓";
+  chk.textContent = marcado ? "✓" : "";
+  chk.style.background = marcado ? "var(--brand)" : "";
+  chk.style.borderColor = marcado ? "var(--brand)" : "var(--line)";
+  btn.disabled = !marcado;
+  btn.style.cursor = marcado ? "pointer" : "not-allowed";
+  btn.style.background = marcado ? "var(--brand)" : "var(--surface-2)";
+  btn.style.color = marcado ? "#fff" : "var(--ink-mute)";
+  btn.style.boxShadow = marcado ? "0 6px 16px rgba(18,165,122,.28)" : "none";
+}
+function ccAceptarTerminos(){
+  const btn = document.getElementById("ccTerminosBtn");
+  if(btn.disabled) return;
+  try{ localStorage.setItem(CC_TERMINOS_KEY, "1"); }catch(e){}
+  const el = document.getElementById("ccTerminos");
+  if(el) el.style.display = "none";
+  showView("deudas");
   mostrarGuiaDeudas();
 }
 function mostrarGuiaDeudas(){
@@ -8431,6 +8513,13 @@ function ccElegirIconoNuevo(ic){
 ccCargarTema();
 ccCargarTamanoLetra();
 ccMostrarWelcomeSiPrimeraVez();
+// Si ya vio la bienvenida (o cerró la app a medio camino) pero todavía no
+// aceptó los términos, se le vuelve a pedir antes de dejarlo seguir.
+(function ccRevisarTerminosAlAbrir(){
+  let vistaBienvenida = false;
+  try{ vistaBienvenida = localStorage.getItem(CC_WELCOME_KEY) === "1"; }catch(e){}
+  if(vistaBienvenida && !ccYaAceptoTerminos()) ccMostrarTerminos();
+})();
 setTimeout(ccMostrarAyudaSiListo, 900);
 
 // Revisa si hay una versión nueva (a los 2 segundos, sin bloquear el arranque)
