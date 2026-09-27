@@ -659,6 +659,18 @@
   </div>
 </div>
 
+<!-- Modal de choque: la nube y este dispositivo tienen datos propios -->
+<div id="ccConflictoNubeModal" style="display:none; position:fixed; inset:0; z-index:9997; background:rgba(0,0,0,.55); align-items:center; justify-content:center; padding:24px;">
+  <div style="background:var(--surface); border-radius:20px; padding:24px; max-width:360px; width:100%; box-shadow:0 20px 50px rgba(0,0,0,.3);">
+    <div style="font-size:32px; text-align:center; margin-bottom:8px;">☁️</div>
+    <div style="font-size:15px; font-weight:800; text-align:center; margin-bottom:8px;">Tu hogar ya tiene datos guardados en la nube</div>
+    <div id="ccConflictoNubeTexto" class="hint" style="text-align:center; margin-bottom:16px;"></div>
+    <button onclick="ccConflictoNubeResolver('nube')" style="width:100%; background:var(--brand-dark); color:#fff; border:none; border-radius:12px; padding:13px; font-weight:800; cursor:pointer; margin-bottom:10px;">☁️ Traer los de la nube</button>
+    <button onclick="ccConflictoNubeResolver('local')" style="width:100%; background:var(--surface-2); color:var(--ink); border:none; border-radius:12px; padding:13px; font-weight:700; cursor:pointer;">📱 Usar los de este dispositivo</button>
+    <div class="hint" style="text-align:center; margin-top:12px;">La versión que no elijas no se pierde en la nube hasta que subas algo — si quieres, haz un respaldo antes por si acaso.</div>
+  </div>
+</div>
+
 <!-- Aviso fijo arriba con el estado de la sincronización con la nube -->
 <div id="ccSyncBanner" style="position:fixed; left:0; right:0; top:0; z-index:9994; text-align:center;
      font-size:12.5px; font-weight:700; padding:8px 12px; color:#fff; display:none;
@@ -8871,18 +8883,49 @@ if(typeof supabase !== "undefined"){
     return { hogarId: nuevoHogarId, rol: "admin", advertencia: ccAdvertenciaInvitacion, nuevo: true };
   }
 
-  /* ---- Traer lo que ya hay guardado en la nube para este hogar ---- */
-  async function ccCargarDesdeNube(){
+  /* ---- Traer (sin aplicar todavía) lo que ya hay guardado en la nube ---- */
+  async function ccObtenerEstadoNube(){
     const { data, error } = await sbFamiliar.from("estado_app")
-      .select("datos").eq("hogar_id", ccHogarId).maybeSingle();
-    if(error) console.error("ccCargarDesdeNube:", error);
-    if(error || !data || !data.datos || Object.keys(data.datos).length===0) return false;
-    ccUltimoEstadoSubidoJSON = JSON.stringify(data.datos);
-    state = hidratar(data.datos, defaultState());
+      .select("datos, actualizado_en").eq("hogar_id", ccHogarId).maybeSingle();
+    if(error) console.error("ccObtenerEstadoNube:", error);
+    if(error || !data || !data.datos || Object.keys(data.datos).length===0) return null;
+    return data;
+  }
+  function ccAplicarEstadoNube(datos){
+    ccUltimoEstadoSubidoJSON = JSON.stringify(datos);
+    state = hidratar(datos, defaultState());
     ccSaveStateOriginal();
     renderAll();
-    return true;
   }
+
+  /* ---- ¿Este dispositivo ya tiene algo real guardado (no solo lo vacío
+     de fábrica)? Si es así, no hay que reemplazarlo sin preguntar. ---- */
+  function ccEstadoLocalTieneDatos(){
+    return !!(
+      (state.gastos && state.gastos.length) ||
+      (state.deudas && state.deudas.length) ||
+      (state.metas && state.metas.length) ||
+      (state.ingresosOcasionales && state.ingresosOcasionales.length) ||
+      (state.ingresoPrincipal && state.ingresoPrincipal.monto > 0 && !state.ingresoPrincipal.esEjemplo)
+    );
+  }
+
+  /* ---- Si hay choque (nube Y celular con datos reales), se pregunta qué
+     dejar — nunca se decide en silencio cuál de las dos versiones pisar. ---- */
+  let ccConflictoNubeCb = null;
+  function ccPreguntarConflictoNube(fechaNube){
+    return new Promise(resolve=>{
+      ccConflictoNubeCb = resolve;
+      document.getElementById("ccConflictoNubeTexto").textContent =
+        "Este dispositivo ya tiene datos guardados, y tu hogar en la nube también (última vez que se guardó ahí: " + fechaNube + "). ¿Cuál quieres dejar?";
+      document.getElementById("ccConflictoNubeModal").style.display = "flex";
+    });
+  }
+  window.ccConflictoNubeResolver = function(valor){
+    document.getElementById("ccConflictoNubeModal").style.display = "none";
+    const cb = ccConflictoNubeCb; ccConflictoNubeCb = null;
+    if(cb) cb(valor);
+  };
 
   /* ---- Subir a la nube cada vez que se guarda localmente ---- */
   let ccSubiendoAhora = false;
@@ -9122,24 +9165,56 @@ if(typeof supabase !== "undefined"){
       return true;
     }
 
-    const huboNube = await ccCargarDesdeNube();
-    if(huboNube){
+    const nube = await ccObtenerEstadoNube();
+    // Solo se pregunta la PRIMERA vez que este dispositivo conecta este
+    // hogar — después queda todo sincronizado y no tiene sentido volver a
+    // preguntar cada vez que se abre la app.
+    const claveYaConectado = "cc_nube_ya_conectado_" + ccHogarId;
+    const yaConectadoAntes = localStorage.getItem(claveYaConectado) === "1";
+
+    if(nube === null){
+      if(resultado.nuevo){
+        // Este hogar lo acabamos de crear nosotros mismos en esta misma
+        // conexión: no hay nada real en la nube todavía, así que es seguro
+        // subir lo que ya tienes en este celular como punto de partida.
+        ccMostrarBannerSync("☁️ Conectado — subiendo lo que ya tienes en este celular", "#0B7D5C", true);
+        ccActivarSyncSaveState();
+        ccActivarRealtime();
+        ccSubirANube();
+        localStorage.setItem(claveYaConectado, "1");
+      } else {
+        // El hogar ya existía pero no se pudo confirmar su contenido (error
+        // de lectura, RLS, etc.) — NO se activa la subida automática, para
+        // no arriesgarse a pisar datos reales de tu hogar por una falla
+        // pasajera.
+        ccMostrarBannerSync("⚠️ No se pudieron confirmar los datos de tu hogar en la nube. Vuelve a intentar con mejor conexión antes de seguir — por ahora no se sube ni se cambia nada.", "#C0392B", false);
+      }
+    } else if(!yaConectadoAntes && ccEstadoLocalTieneDatos()){
+      // Choque real: la nube ya tiene datos Y este celular también — se
+      // pregunta cuál de las dos versiones dejar, en vez de decidir solo.
+      const fechaNube = nube.actualizado_en
+        ? new Date(nube.actualizado_en).toLocaleString("es-CO", { dateStyle: "medium", timeStyle: "short" })
+        : "hace un momento";
+      const decision = await ccPreguntarConflictoNube(fechaNube);
+      ccActivarSyncSaveState();
+      ccActivarRealtime();
+      if(decision === "nube"){
+        ccAplicarEstadoNube(nube.datos);
+        ccMostrarBannerSync("☁️ Datos actualizados desde tu hogar", "#0B7D5C", true);
+      } else {
+        ccMostrarBannerSync("☁️ Conectado — subiendo los datos de este dispositivo", "#0B7D5C", true);
+        ccSubirANube();
+      }
+      localStorage.setItem(claveYaConectado, "1");
+    } else {
+      // Caso normal: este celular no tenía nada propio que perder (por
+      // ejemplo, alguien recién invitado), o ya se había resuelto antes —
+      // se trae la nube sin preguntar, como hasta ahora.
+      ccAplicarEstadoNube(nube.datos);
       ccMostrarBannerSync("☁️ Datos actualizados desde tu hogar", "#0B7D5C", true);
       ccActivarSyncSaveState();
       ccActivarRealtime();
-    } else if(resultado.nuevo){
-      // Este hogar lo acabamos de crear nosotros mismos en esta misma
-      // conexión: no hay nada real en la nube todavía, así que es seguro
-      // subir lo que ya tienes en este celular como punto de partida.
-      ccMostrarBannerSync("☁️ Conectado — subiendo lo que ya tienes en este celular", "#0B7D5C", true);
-      ccActivarSyncSaveState();
-      ccActivarRealtime();
-      ccSubirANube();
-    } else {
-      // El hogar ya existía pero no se pudo confirmar su contenido (error de
-      // lectura, o RLS, etc.) — NO se activa la subida automática, para no
-      // arriesgarse a pisar datos reales de tu hogar por una falla pasajera.
-      ccMostrarBannerSync("⚠️ No se pudieron confirmar los datos de tu hogar en la nube. Vuelve a intentar con mejor conexión antes de seguir — por ahora no se sube ni se cambia nada.", "#C0392B", false);
+      localStorage.setItem(claveYaConectado, "1");
     }
 
     if(resultado.advertencia){
