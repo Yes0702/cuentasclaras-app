@@ -2,7 +2,7 @@
    Cuentas Claras - Service Worker
    v3: cache + alarmas que funcionan con la app CERRADA
    ===================================================================== */
-const CACHE_NAME  = "cuentas-claras-v6";
+const CACHE_NAME  = "cuentas-claras-v7";
 const ALARM_CACHE = "cuentas-claras-alarmas";
 const ALARM_KEY   = "/__cc_alarmas__";
 const PERIODIC_TAG = "cc-revisar-alarmas";
@@ -269,6 +269,15 @@ self.addEventListener("notificationclick", (event) => {
 self.addEventListener("fetch", (event) => {
   const req = event.request;
   if(req.method !== "GET") return;
+
+  // Las consultas al círculo familiar (Supabase) NUNCA se cachean: son datos
+  // vivos que cambian todo el tiempo (otro dispositivo del hogar puede subir
+  // un cambio en cualquier momento). Si se cachearan, la app quedaría
+  // pegada mostrando para siempre la primera respuesta que haya recibido.
+  if(req.url.indexOf("supabase.co") !== -1){
+    event.respondWith(fetch(req));
+    return;
+  }
 
   const esNavegacion = req.mode === "navigate" ||
     (req.destination === "document") ||
