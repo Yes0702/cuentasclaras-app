@@ -8804,12 +8804,18 @@ if(typeof supabase !== "undefined"){
   // URL nunca se repite y ningún caché (sea cual sea) puede reusar nada.
   const sbFamiliar = supabase.createClient(SUPABASE_URL, SUPABASE_KEY, {
     global: {
+      // OJO: nunca se le agrega nada a la URL — Supabase (PostgREST)
+      // interpreta cualquier parámetro que no reconoce como un intento de
+      // filtro de columna, y truena con un error si no calza con ninguna.
+      // Por eso el "no cachear" va solo por cache/headers, sin tocar la URL.
       fetch: (url, options) => {
         options = options || {};
         const metodo = (options.method || "GET").toUpperCase();
         if(metodo === "GET"){
-          url = url + (String(url).indexOf("?") === -1 ? "?" : "&") + "_cc=" + Date.now();
-          options = Object.assign({}, options, { cache: "no-store" });
+          options = Object.assign({}, options, {
+            cache: "no-store",
+            headers: Object.assign({}, options.headers, { "Cache-Control": "no-cache" })
+          });
         }
         return fetch(url, options);
       }
