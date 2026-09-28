@@ -8812,10 +8812,12 @@ if(typeof supabase !== "undefined"){
         options = options || {};
         const metodo = (options.method || "GET").toUpperCase();
         if(metodo === "GET"){
-          options = Object.assign({}, options, {
-            cache: "no-store",
-            headers: Object.assign({}, options.headers, { "Cache-Control": "no-cache" })
-          });
+          // new Headers(...) sí conserva los headers originales (apikey,
+          // Authorization, etc.) vengan como objeto plano, arreglo o ya
+          // como Headers — Object.assign sobre un Headers real los perdía.
+          const headers = new Headers(options.headers || {});
+          headers.set("Cache-Control", "no-cache");
+          options = Object.assign({}, options, { cache: "no-store", headers });
         }
         return fetch(url, options);
       }
