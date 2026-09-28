@@ -8796,7 +8796,25 @@ if(typeof supabase !== "undefined"){
 (function(){
   const SUPABASE_URL = "https://xlzlxjbxqkpdudojcgyq.supabase.co";
   const SUPABASE_KEY = "sb_publishable_M3hizPbgXWU1_n5bTuyCkA_Yx1uEXRb";
-  const sbFamiliar = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+  // En el APK (Android), CapacitorHttp saca las peticiones de red por un
+  // canal nativo que ni el Service Worker ni el caché normal del navegador
+  // controlan — y ese canal puede quedarse devolviendo una respuesta vieja
+  // en vez de preguntar de nuevo. Para no depender de adivinar cuál caché
+  // exacto es, cada lectura (GET) se le agrega un parámetro único: así la
+  // URL nunca se repite y ningún caché (sea cual sea) puede reusar nada.
+  const sbFamiliar = supabase.createClient(SUPABASE_URL, SUPABASE_KEY, {
+    global: {
+      fetch: (url, options) => {
+        options = options || {};
+        const metodo = (options.method || "GET").toUpperCase();
+        if(metodo === "GET"){
+          url = url + (String(url).indexOf("?") === -1 ? "?" : "&") + "_cc=" + Date.now();
+          options = Object.assign({}, options, { cache: "no-store" });
+        }
+        return fetch(url, options);
+      }
+    }
+  });
 
   const banner = document.getElementById("ccSyncBanner");
   function ccMostrarBannerSync(texto, color, autoOcultar){
