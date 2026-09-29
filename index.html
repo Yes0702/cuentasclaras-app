@@ -9010,9 +9010,25 @@ if(typeof supabase !== "undefined"){
     if(error || !data || !data.datos || Object.keys(data.datos).length===0) return null;
     return data;
   }
-  function ccAplicarEstadoNube(datos){
-    ccUltimoEstadoSubidoJSON = JSON.stringify(datos);
-    state = hidratar(datos, defaultState());
+  /* ---- Cuál es el dato más reciente que ya conocemos con certeza (de lo
+     último que subimos nosotros o de lo último que trajimos de la nube).
+     Sirve para descartar respuestas atrasadas: si una consulta lenta pedida
+     ANTES de un cambio reciente llega DESPUÉS, no debe pisarlo con datos
+     viejos solo porque llegó tarde. ---- */
+  let ccUltimaActualizadaEnConocida = null;
+  function ccRegistrarActualizacionConocida(fechaISO){
+    if(fechaISO && (!ccUltimaActualizadaEnConocida || new Date(fechaISO).getTime() > new Date(ccUltimaActualizadaEnConocida).getTime())){
+      ccUltimaActualizadaEnConocida = fechaISO;
+    }
+  }
+  function ccEsRespuestaDesactualizada(fechaISO){
+    if(!ccUltimaActualizadaEnConocida || !fechaISO) return false;
+    return new Date(fechaISO).getTime() <= new Date(ccUltimaActualizadaEnConocida).getTime();
+  }
+  function ccAplicarEstadoNube(nube){
+    ccUltimoEstadoSubidoJSON = JSON.stringify(nube.datos);
+    ccRegistrarActualizacionConocida(nube.actualizado_en);
+    state = hidratar(nube.datos, defaultState());
     ccSaveStateOriginal();
     renderAll();
   }
@@ -9059,8 +9075,9 @@ if(typeof supabase !== "undefined"){
     if(ccSubiendoAhora){ ccSubidaPendiente = true; return; }
     ccSubiendoAhora = true;
     const datosJSON = JSON.stringify(state);
+    const fechaISO = new Date().toISOString();
     const { error } = await sbFamiliar.from("estado_app")
-      .upsert({ hogar_id: ccHogarId, datos: state, actualizado_en: new Date().toISOString() });
+      .upsert({ hogar_id: ccHogarId, datos: state, actualizado_en: fechaISO });
     ccSubiendoAhora = false;
     if(error){
       console.error(error);
@@ -9068,6 +9085,7 @@ if(typeof supabase !== "undefined"){
       ccSubidaPendiente = true;
     } else {
       ccUltimoEstadoSubidoJSON = datosJSON;
+      ccRegistrarActualizacionConocida(fechaISO);
       ccMostrarBannerSync("☁️ Datos subidos a la nube", "#0B7D5C", true);
       if(ccSubidaPendiente){ ccSubidaPendiente = false; ccSubirANube(); }
     }
@@ -9097,12 +9115,17 @@ if(typeof supabase !== "undefined"){
       }, (payload)=>{
         const nuevo = payload.new && payload.new.datos;
         if(!nuevo) return;
-        const nuevoJSON = JSON.stringify(nuevo);
         // Si es el eco de lo que nosotros mismos acabamos de subir, no hay
         // nada que actualizar — evita un refresco innecesario o un choque
         // con lo que se esté escribiendo en ese momento.
+        const nuevoJSON = JSON.stringify(nuevo);
         if(nuevoJSON === ccUltimoEstadoSubidoJSON) return;
+        // Y si ya sabemos de un cambio más nuevo que este (por ejemplo uno
+        // que nosotros mismos acabamos de subir), se descarta: no tiene
+        // sentido volver para atrás.
+        if(ccEsRespuestaDesactualizada(payload.new.actualizado_en)) return;
         ccUltimoEstadoSubidoJSON = nuevoJSON;
+        ccRegistrarActualizacionConocida(payload.new.actualizado_en);
         state = hidratar(nuevo, defaultState());
         ccSaveStateOriginal();
         renderAll();
@@ -9318,7 +9341,7 @@ if(typeof supabase !== "undefined"){
       ccActivarSyncSaveState();
       ccActivarRealtime();
       if(decision === "nube"){
-        ccAplicarEstadoNube(nube.datos);
+        ccAplicarEstadoNube(nube);
         ccMostrarBannerSync("☁️ Datos actualizados desde tu hogar", "#0B7D5C", true);
       } else {
         ccMostrarBannerSync("☁️ Conectado — subiendo los datos de este dispositivo", "#0B7D5C", true);
@@ -9329,7 +9352,7 @@ if(typeof supabase !== "undefined"){
       // Caso normal: este celular no tenía nada propio que perder (por
       // ejemplo, alguien recién invitado), o ya se había resuelto antes —
       // se trae la nube sin preguntar, como hasta ahora.
-      ccAplicarEstadoNube(nube.datos);
+      ccAplicarEstadoNube(nube);
       ccMostrarBannerSync("☁️ Datos actualizados desde tu hogar", "#0B7D5C", true);
       ccActivarSyncSaveState();
       ccActivarRealtime();
@@ -9366,12 +9389,21 @@ if(typeof supabase !== "undefined"){
     const ahora = Date.now();
     if(ahora - ccUltimaRevisionNube < CC_MIN_MS_ENTRE_REVISIONES) return;
     ccUltimaRevisionNube = ahora;
+    // Si hay un cambio local subiendo (o por subir), lo que se lea de la
+    // nube ahora mismo puede estar desactualizado — no se revisa esta vez.
+    if(ccSubiendoAhora || ccSubidaPendiente) return;
     try{
       const nube = await ccObtenerEstadoNube();
       if(!nube) return;
+      // Mientras se esperaba esta respuesta pudo haber empezado (o incluso
+      // terminado) una subida local más reciente — se vuelve a revisar antes
+      // de aplicar nada, para no pisar un cambio que se acaba de guardar.
+      if(ccSubiendoAhora || ccSubidaPendiente) return;
+      if(ccEsRespuestaDesactualizada(nube.actualizado_en)) return;
       const nuevoJSON = JSON.stringify(nube.datos);
       if(nuevoJSON === ccUltimoEstadoSubidoJSON) return; // sin cambios
       ccUltimoEstadoSubidoJSON = nuevoJSON;
+      ccRegistrarActualizacionConocida(nube.actualizado_en);
       state = hidratar(nube.datos, defaultState());
       ccSaveStateOriginal();
       renderAll();
