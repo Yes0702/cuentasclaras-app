@@ -2747,6 +2747,9 @@ function showView(name){
   chartState.inicio.tortaPick = null;
   chartState.gastos.tortaPick = null;
   renderAll();
+  // Cambiar de pestaña también aprovecha para revisar la nube en silencio,
+  // por si otro dispositivo del hogar subió un cambio mientras tanto.
+  if(typeof window.ccRevisarNubeAlVolver === "function") window.ccRevisarNubeAlVolver();
 }
 
 function ccIrApoyar(){
@@ -9348,12 +9351,21 @@ if(typeof supabase !== "undefined"){
     }catch(e){ /* sin internet o sin sesión: la app sigue funcionando local */ }
   })();
 
-  /* ---- Al volver a la app (minimizada o cambiaste de app y regresaste,
-     no hace falta cerrarla del todo) se revisa la nube por si algo cambió
-     mientras tanto — el tiempo real (WebSocket) no siempre se mantiene
-     despierto en Android cuando la app queda en segundo plano. ---- */
+  /* ---- Se revisa la nube por si algo cambió mientras tanto: al volver a
+     la app (minimizada o cambiaste de app y regresaste, sin cerrarla del
+     todo) y también al cambiar de pestaña DENTRO de la app (Inicio,
+     Gastos, Ajustes, etc.) — el tiempo real (WebSocket) no siempre se
+     mantiene despierto en Android cuando la app queda en segundo plano.
+     Siempre en silencio: sin indicador de "buscando", solo se nota si
+     encuentra un cambio real. Con un mínimo de tiempo entre revisiones
+     para no golpear la nube si cambias de pestaña muy rápido. ---- */
+  let ccUltimaRevisionNube = 0;
+  const CC_MIN_MS_ENTRE_REVISIONES = 4000;
   async function ccRevisarNubeAlVolver(){
     if(!ccHogarId) return; // todavía no está conectado a un hogar
+    const ahora = Date.now();
+    if(ahora - ccUltimaRevisionNube < CC_MIN_MS_ENTRE_REVISIONES) return;
+    ccUltimaRevisionNube = ahora;
     try{
       const nube = await ccObtenerEstadoNube();
       if(!nube) return;
@@ -9366,6 +9378,7 @@ if(typeof supabase !== "undefined"){
       ccMostrarBannerSync("☁️ Se actualizó al volver a la app", "#0B7D5C", true);
     }catch(e){ /* sin internet: se queda con lo último que tenía */ }
   }
+  window.ccRevisarNubeAlVolver = ccRevisarNubeAlVolver;
   try{
     if(window.Capacitor && Capacitor.Plugins && Capacitor.Plugins.App){
       Capacitor.Plugins.App.addListener("resume", ccRevisarNubeAlVolver);
