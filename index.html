@@ -8869,17 +8869,25 @@ if(typeof supabase !== "undefined"){
     if(!ccValidarCorreo(correo)){ msg.textContent = "Escribe un correo válido."; return; }
     const btn = document.getElementById("ccLoginBtnEnviar");
     btn.disabled = true; const textoOrig = btn.textContent; btn.textContent = "Enviando...";
-    const { error } = await sbFamiliar.auth.signInWithOtp({ email: correo, options: { shouldCreateUser: true } });
-    btn.disabled = false; btn.textContent = textoOrig;
-    if(error){ msg.textContent = "No se pudo enviar el código: " + error.message; return; }
-    ccLoginCorreoActual = correo;
-    document.getElementById("ccLoginCorreoMostrado").textContent = correo;
-    document.getElementById("ccLoginCodigo").value = "";
-    document.getElementById("ccLoginMsgCodigo").textContent = "";
-    ccLoginReenviarBloqueadoHasta = Date.now() + 30000;
-    document.getElementById("ccLoginPasoCorreo").style.display = "none";
-    document.getElementById("ccLoginPasoCodigo").style.display = "block";
-    document.getElementById("ccLoginCodigo").focus();
+    try{
+      const { error } = await sbFamiliar.auth.signInWithOtp({ email: correo, options: { shouldCreateUser: true } });
+      if(error){ msg.textContent = "No se pudo enviar el código: " + error.message; return; }
+      ccLoginCorreoActual = correo;
+      document.getElementById("ccLoginCorreoMostrado").textContent = correo;
+      document.getElementById("ccLoginCodigo").value = "";
+      document.getElementById("ccLoginMsgCodigo").textContent = "";
+      ccLoginReenviarBloqueadoHasta = Date.now() + 30000;
+      document.getElementById("ccLoginPasoCorreo").style.display = "none";
+      document.getElementById("ccLoginPasoCodigo").style.display = "block";
+      document.getElementById("ccLoginCodigo").focus();
+    }catch(e){
+      // Una excepción de red (no solo un error de Supabase) no debe dejar
+      // el botón trabado para siempre en "Enviando...".
+      console.error("ccLoginEnviarCodigo:", e);
+      msg.textContent = "No se pudo enviar el código (sin conexión). Intenta de nuevo.";
+    }finally{
+      btn.disabled = false; btn.textContent = textoOrig;
+    }
   };
   window.ccLoginVerificarCodigo = async function(){
     const codigo = document.getElementById("ccLoginCodigo").value.trim();
@@ -8889,11 +8897,26 @@ if(typeof supabase !== "undefined"){
     if(codigo.length < 4){ msg.textContent = "Escribe el código completo que te llegó al correo."; return; }
     const btn = document.getElementById("ccLoginBtnVerificar");
     btn.disabled = true; const textoOrig = btn.textContent; btn.textContent = "Verificando...";
-    const { error } = await sbFamiliar.auth.verifyOtp({ email: ccLoginCorreoActual, token: codigo, type: "email" });
-    btn.disabled = false; btn.textContent = textoOrig;
-    if(error){ msg.textContent = "Código incorrecto o vencido. " + error.message; return; }
+    try{
+      const { error } = await sbFamiliar.auth.verifyOtp({ email: ccLoginCorreoActual, token: codigo, type: "email" });
+      if(error){ msg.textContent = "Código incorrecto o vencido. " + error.message; return; }
+    }catch(e){
+      console.error("ccLoginVerificarCodigo:", e);
+      msg.textContent = "No se pudo verificar el código (sin conexión). Intenta de nuevo.";
+      return;
+    }finally{
+      btn.disabled = false; btn.textContent = textoOrig;
+    }
     document.getElementById("ccLoginModal").style.display = "none";
-    await ccConectarHogar();
+    try{
+      await ccConectarHogar();
+    }catch(e){
+      // Se inició sesión bien, pero conectar con el hogar falló por algo
+      // más que un simple error de Supabase (por ejemplo, la conexión se
+      // cayó a mitad de camino) — se avisa en vez de dejarlo en silencio.
+      console.error("ccConectarHogar tras login:", e);
+      ccMostrarBannerSync("⚠️ Se inició sesión, pero no se pudo conectar con tu hogar todavía. Vuelve a intentar con mejor conexión.", "#C0392B", false);
+    }
   };
   window.ccLoginReenviar = async function(){
     const msg = document.getElementById("ccLoginMsgCodigo");
@@ -8904,11 +8927,17 @@ if(typeof supabase !== "undefined"){
       return;
     }
     msg.textContent = "";
-    const { error } = await sbFamiliar.auth.signInWithOtp({ email: ccLoginCorreoActual });
-    if(error){ msg.style.color = "var(--red)"; msg.textContent = "No se pudo reenviar: " + error.message; return; }
-    ccLoginReenviarBloqueadoHasta = Date.now() + 30000;
-    msg.style.color = "var(--brand-dark)";
-    msg.textContent = "Código reenviado. Revisa tu correo.";
+    try{
+      const { error } = await sbFamiliar.auth.signInWithOtp({ email: ccLoginCorreoActual });
+      if(error){ msg.style.color = "var(--red)"; msg.textContent = "No se pudo reenviar: " + error.message; return; }
+      ccLoginReenviarBloqueadoHasta = Date.now() + 30000;
+      msg.style.color = "var(--brand-dark)";
+      msg.textContent = "Código reenviado. Revisa tu correo.";
+    }catch(e){
+      console.error("ccLoginReenviar:", e);
+      msg.style.color = "var(--red)";
+      msg.textContent = "No se pudo reenviar (sin conexión). Intenta de nuevo.";
+    }
   };
   window.ccLoginVolverCorreo = function(){
     document.getElementById("ccLoginMsgCorreo").textContent = "";
