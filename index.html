@@ -9066,28 +9066,51 @@ if(typeof supabase !== "undefined"){
   let ccSubiendoAhora = false;
   let ccSubidaPendiente = false;
   let ccUltimoEstadoSubidoJSON = null;
+  /* Esta marca vive en localStorage (no solo en memoria) para que, si la
+     app se cierra justo antes de confirmar que un cambio llegó a subir
+     (mala conexión, se cerró muy rápido, etc.), lo sepamos incluso después
+     de reabrir — y no se pierda ese cambio al volver a conectar. */
+  function ccClavePendiente(){ return "cc_subida_pendiente_" + ccHogarId; }
+  function ccMarcarPendiente(){ try{ localStorage.setItem(ccClavePendiente(), "1"); }catch(e){} }
+  function ccQuitarMarcaPendiente(){ try{ localStorage.removeItem(ccClavePendiente()); }catch(e){} }
+  function ccHaySubidaPendienteGuardada(){
+    try{ return localStorage.getItem(ccClavePendiente()) === "1"; }catch(e){ return false; }
+  }
   async function ccSubirANube(){
     if(!navigator.onLine){
       ccSubidaPendiente = true;
+      ccMarcarPendiente();
       ccMostrarBannerSync("📴 Sin internet — tus cambios quedan guardados en este celular, se suben cuando vuelva la conexión", "#C56A12", false);
       return;
     }
-    if(ccSubiendoAhora){ ccSubidaPendiente = true; return; }
+    if(ccSubiendoAhora){ ccSubidaPendiente = true; ccMarcarPendiente(); return; }
     ccSubiendoAhora = true;
+    ccMarcarPendiente(); // se marca ANTES de intentar: si algo falla a medio camino, no se pierde el rastro
     const datosJSON = JSON.stringify(state);
     const fechaISO = new Date().toISOString();
-    const { error } = await sbFamiliar.from("estado_app")
-      .upsert({ hogar_id: ccHogarId, datos: state, actualizado_en: fechaISO });
-    ccSubiendoAhora = false;
-    if(error){
-      console.error(error);
+    try{
+      const { error } = await sbFamiliar.from("estado_app")
+        .upsert({ hogar_id: ccHogarId, datos: state, actualizado_en: fechaISO });
+      if(error){
+        console.error(error);
+        ccMostrarBannerSync("⚠️ No se pudo subir el último cambio. Reintentando...", "#C0392B", false);
+        ccSubidaPendiente = true;
+      } else {
+        ccUltimoEstadoSubidoJSON = datosJSON;
+        ccRegistrarActualizacionConocida(fechaISO);
+        ccQuitarMarcaPendiente();
+        ccMostrarBannerSync("☁️ Datos subidos a la nube", "#0B7D5C", true);
+        if(ccSubidaPendiente){ ccSubidaPendiente = false; ccSubirANube(); }
+      }
+    }catch(e){
+      // Una excepción de red (no solo un error de Supabase) no debe dejar
+      // esto atascado para siempre — se marca como pendiente y se puede
+      // reintentar más tarde (al volver la conexión o al reabrir la app).
+      console.error("ccSubirANube:", e);
       ccMostrarBannerSync("⚠️ No se pudo subir el último cambio. Reintentando...", "#C0392B", false);
       ccSubidaPendiente = true;
-    } else {
-      ccUltimoEstadoSubidoJSON = datosJSON;
-      ccRegistrarActualizacionConocida(fechaISO);
-      ccMostrarBannerSync("☁️ Datos subidos a la nube", "#0B7D5C", true);
-      if(ccSubidaPendiente){ ccSubidaPendiente = false; ccSubirANube(); }
+    }finally{
+      ccSubiendoAhora = false;
     }
   }
 
@@ -9307,12 +9330,29 @@ if(typeof supabase !== "undefined"){
       return true;
     }
 
-    const nube = await ccObtenerEstadoNube();
     // Solo se pregunta la PRIMERA vez que este dispositivo conecta este
     // hogar — después queda todo sincronizado y no tiene sentido volver a
     // preguntar cada vez que se abre la app.
     const claveYaConectado = "cc_nube_ya_conectado_" + ccHogarId;
     const yaConectadoAntes = localStorage.getItem(claveYaConectado) === "1";
+
+    // Si quedó un cambio local que no se confirmó que subió de verdad (por
+    // ejemplo: se cerró la app con mala conexión justo después de guardar,
+    // o algo falló a medio camino), hay que terminar de subirlo ANTES que
+    // nada — nunca se trae la nube y se pisa por encima sin más, porque
+    // ahí es donde se pierde lo que se acababa de guardar.
+    if(yaConectadoAntes && ccHaySubidaPendienteGuardada()){
+      ccActivarSyncSaveState();
+      ccActivarRealtime();
+      ccMostrarBannerSync("☁️ Terminando de subir un cambio pendiente...", "#0B7D5C", false);
+      await ccSubirANube();
+      if(resultado.advertencia){
+        setTimeout(()=>{ ccMostrarBannerSync("⚠️ " + resultado.advertencia, "#C0392B", false); }, 3200);
+      }
+      return true;
+    }
+
+    const nube = await ccObtenerEstadoNube();
 
     if(nube === null){
       if(resultado.nuevo){
