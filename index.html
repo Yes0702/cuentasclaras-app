@@ -9138,6 +9138,12 @@ if(typeof supabase !== "undefined"){
       }, (payload)=>{
         const nuevo = payload.new && payload.new.datos;
         if(!nuevo) return;
+        // Si hay un cambio local subiendo (o por subir) en este preciso
+        // momento, no se toca "state" — si se aplicara este eco por encima
+        // de un guardado que todavía está en camino, la próxima vez que se
+        // guarde algo se subiría por encima de este cambio (u otro más
+        // reciente) sin darse cuenta.
+        if(ccSubiendoAhora || ccSubidaPendiente) return;
         // Si es el eco de lo que nosotros mismos acabamos de subir, no hay
         // nada que actualizar — evita un refresco innecesario o un choque
         // con lo que se esté escribiendo en ese momento.
@@ -9425,7 +9431,11 @@ if(typeof supabase !== "undefined"){
   let ccUltimaRevisionNube = 0;
   const CC_MIN_MS_ENTRE_REVISIONES = 4000;
   async function ccRevisarNubeAlVolver(){
-    if(!ccHogarId) return; // todavía no está conectado a un hogar
+    // ccSaveStateOriginal solo queda "puesto" cuando ccActivarSyncSaveState()
+    // ya se ejecutó de verdad (nunca en el caso "conectado pero sin internet
+    // todavía") — usarlo como bandera evita revisar la nube antes de que la
+    // sincronización esté realmente activa.
+    if(!ccHogarId || !ccSaveStateOriginal) return;
     const ahora = Date.now();
     if(ahora - ccUltimaRevisionNube < CC_MIN_MS_ENTRE_REVISIONES) return;
     ccUltimaRevisionNube = ahora;
