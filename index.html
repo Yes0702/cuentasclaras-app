@@ -9016,17 +9016,18 @@ if(typeof supabase !== "undefined"){
     }
     localStorage.removeItem("cc_codigo_acceso");
 
+    // Crear el hogar Y unirte como administrador se hace en una sola función
+    // de la base de datos (crear_hogar_propio) — así, si la conexión se cae
+    // a mitad de camino, Postgres deshace los dos pasos juntos y nunca queda
+    // un hogar creado sin nadie adentro.
     const nuevoHogarId = crypto.randomUUID();
-    const { error: errHogar } = await sbFamiliar.from("hogares")
-      .insert({ id: nuevoHogarId, nombre: "Mi hogar", creado_por: ccUserId, tope_miembros: tope });
-    if(errHogar) return { error: "creando hogar: " + errHogar.message };
+    const { error: errCrear } = await sbFamiliar.rpc("crear_hogar_propio", {
+      nuevo_hogar_id: nuevoHogarId, tope_input: tope, nombre_input: "Mi hogar"
+    });
+    if(errCrear) return { error: "creando hogar: " + errCrear.message };
     // "nuevo: true" es la única situación en la que es seguro subir lo local
     // como punto de partida — porque este hogar lo acabamos de crear nosotros
     // mismos, así que no hay nada real en la nube que se pueda pisar.
-
-    const { error: errMiembro } = await sbFamiliar.from("miembros_hogar")
-      .insert({ hogar_id: nuevoHogarId, user_id: ccUserId, rol: "admin" });
-    if(errMiembro) return { error: "uniéndote al hogar: " + errMiembro.message };
 
     return { hogarId: nuevoHogarId, rol: "admin", advertencia: ccAdvertenciaInvitacion, nuevo: true };
   }
