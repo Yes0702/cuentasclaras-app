@@ -9347,6 +9347,33 @@ if(typeof supabase !== "undefined"){
       if(data.session) await ccConectarHogar();
     }catch(e){ /* sin internet o sin sesión: la app sigue funcionando local */ }
   })();
+
+  /* ---- Al volver a la app (minimizada o cambiaste de app y regresaste,
+     no hace falta cerrarla del todo) se revisa la nube por si algo cambió
+     mientras tanto — el tiempo real (WebSocket) no siempre se mantiene
+     despierto en Android cuando la app queda en segundo plano. ---- */
+  async function ccRevisarNubeAlVolver(){
+    if(!ccHogarId) return; // todavía no está conectado a un hogar
+    try{
+      const nube = await ccObtenerEstadoNube();
+      if(!nube) return;
+      const nuevoJSON = JSON.stringify(nube.datos);
+      if(nuevoJSON === ccUltimoEstadoSubidoJSON) return; // sin cambios
+      ccUltimoEstadoSubidoJSON = nuevoJSON;
+      state = hidratar(nube.datos, defaultState());
+      ccSaveStateOriginal();
+      renderAll();
+      ccMostrarBannerSync("☁️ Se actualizó al volver a la app", "#0B7D5C", true);
+    }catch(e){ /* sin internet: se queda con lo último que tenía */ }
+  }
+  try{
+    if(window.Capacitor && Capacitor.Plugins && Capacitor.Plugins.App){
+      Capacitor.Plugins.App.addListener("resume", ccRevisarNubeAlVolver);
+    }
+  }catch(e){}
+  document.addEventListener("visibilitychange", ()=>{
+    if(document.visibilityState === "visible") ccRevisarNubeAlVolver();
+  });
 })();
 }
 </script>
