@@ -2581,11 +2581,17 @@ async function ccGenerarPDFResumen(){
   let ingresoTotal = 0, gastadoTotal = 0;
   let totalQ1 = 0, totalQ2 = 0, totalMensual = 0, totalOcasional = 0;
   let huboQuincenal = false, huboMensual = false;
-  const porRubro = {};  // nombre -> {presupuestado, gastado}
+  const porRubro = {};  // nombre -> {presupuestado, gastado} — total COMPILADO del periodo completo
+  // Detalle real de cada mes (para el panorama mes a mes): solo con datos que sí
+  // se conocen de verdad de ese mes — ingreso (por su snapshot) y lo realmente
+  // gastado — nunca el presupuesto de HOY aplicado hacia atrás, porque no hay
+  // forma de saber cuál era el presupuesto real en un mes ya pasado.
+  const detallePorMes = [];
   meses.forEach(([m,a])=>{
     const snap = ccResolverSnapshotIngresoPrincipalPara(m, a);
     const ocasional = (state.ingresosOcasionales||[]).filter(x=>x.mes===m && x.anio===a).reduce((s,x)=>s+(x.monto||0),0);
-    ingresoTotal += (snap.monto||0) + ocasional;
+    const ingresoMes = (snap.monto||0) + ocasional;
+    ingresoTotal += ingresoMes;
     totalOcasional += ocasional;
     if(snap.frecuencia === "quincenal"){
       huboQuincenal = true;
@@ -2599,11 +2605,16 @@ async function ccGenerarPDFResumen(){
       if(!porRubro[r.nombre]) porRubro[r.nombre] = { presupuestado:0, gastado:0 };
       porRubro[r.nombre].presupuestado += montoRubro(r);
     });
+    let gastadoMes = 0;
+    const porRubroMes = {};
     state.gastos.filter(g=>g.mes===m && g.anio===a).forEach(g=>{
       gastadoTotal += g.monto;
+      gastadoMes += g.monto;
       if(!porRubro[g.rubro]) porRubro[g.rubro] = { presupuestado:0, gastado:0 };
       porRubro[g.rubro].gastado += g.monto;
+      porRubroMes[g.rubro] = (porRubroMes[g.rubro]||0) + g.monto;
     });
+    detallePorMes.push({ mes:m, anio:a, ingreso:ingresoMes, gastado:gastadoMes, porRubroMes });
   });
 
   // ---- Armar el PDF ----
@@ -2653,7 +2664,7 @@ async function ccGenerarPDFResumen(){
   doc.text("% del ingreso gastado: " + pct(pctGastado), margen, y);
   y += 30;
 
-  doc.setFontSize(13); doc.text("Gasto por rubro", margen, y); y += 6;
+  doc.setFontSize(13); doc.text(meses.length>1 ? "Gasto por rubro (total compilado del periodo)" : "Gasto por rubro", margen, y); y += 6;
   doc.setDrawColor(200); doc.line(margen, y, pageW-margen, y); y += 16;
   doc.setFont("helvetica","bold"); doc.setFontSize(10);
   doc.text("Rubro", margen, y); doc.text("Presupuestado", 250, y); doc.text("Gastado", 345, y); doc.text("Diferencia", 415, y); doc.text("% Gasto", 500, y);
@@ -2672,6 +2683,56 @@ async function ccGenerarPDFResumen(){
     doc.text(pct(pctRubro), 500, y);
     y += 16;
   });
+
+  // ---- Panorama mes a mes (solo si el reporte cubre más de un mes) ----
+  // A diferencia de la tabla compilada de arriba (que usa el presupuesto
+  // ACTUAL multiplicado por los meses del periodo, ya que no existe un
+  // historial de presupuestos pasados), esto muestra únicamente datos
+  // reales de cada mes: lo que de verdad entró y se gastó, mes por mes.
+  if(meses.length > 1){
+    y += 20;
+    if(y > 690){ doc.addPage(); y = 50; }
+    doc.setFont("helvetica","bold"); doc.setFontSize(13); doc.setTextColor(0);
+    doc.text("Detalle mes a mes", margen, y); y += 6;
+    doc.setDrawColor(200); doc.line(margen, y, pageW-margen, y); y += 12;
+    doc.setFont("helvetica","normal"); doc.setFontSize(8); doc.setTextColor(120);
+    const notaLineas = doc.splitTextToSize(
+      "La tabla de arriba compila el periodo completo con el presupuesto actual — aquí se muestra, mes por mes, solo lo que de verdad entró y se gastó.",
+      pageW - margen*2
+    );
+    notaLineas.forEach(linea=>{ doc.text(linea, margen, y); y += 10; });
+    doc.setTextColor(0);
+    y += 8;
+
+    detallePorMes.forEach(dm=>{
+      if(y > 670){ doc.addPage(); y = 50; }
+      const difMes = dm.ingreso - dm.gastado;
+      doc.setFont("helvetica","bold"); doc.setFontSize(11);
+      doc.text(dm.mes + " " + dm.anio, margen, y); y += 14;
+      doc.setFont("helvetica","normal"); doc.setFontSize(9.5);
+      doc.text(
+        "Ingreso: " + money(dm.ingreso) + "   ·   Gastado: " + money(dm.gastado) +
+        "   ·   " + (difMes>=0 ? "Sobrante: " : "Faltante: ") + money(Math.abs(difMes)),
+        margen+8, y
+      );
+      y += 14;
+      const nombresRubroMes = Object.keys(dm.porRubroMes).sort();
+      if(nombresRubroMes.length){
+        doc.setFontSize(8.5); doc.setTextColor(90);
+        nombresRubroMes.forEach(nombre=>{
+          if(y > 730){ doc.addPage(); y = 50; }
+          doc.text("· " + String(nombre).slice(0,30) + ": " + money(dm.porRubroMes[nombre]), margen+12, y);
+          y += 11;
+        });
+        doc.setFontSize(9.5); doc.setTextColor(0);
+      } else {
+        doc.setFontSize(9); doc.setTextColor(130);
+        doc.text("(sin gastos registrados este mes)", margen+12, y); y += 11;
+        doc.setFontSize(9.5); doc.setTextColor(0);
+      }
+      y += 10;
+    });
+  }
 
   y += 20;
   const deudasActivas = state.deudas.filter(d=>d.saldo>0);
@@ -7154,7 +7215,7 @@ const CONFIG = {
   apiVersion: "https://api.github.com/repos/Yes0702/cuentasclaras/releases/latest",
   urlVersion: "https://github.com/Yes0702/cuentasclaras/releases/latest/download/version.json"
 };
-const APP_VERSION = "9.12";
+const APP_VERSION = "9.14";
 
 /* =====================================================================
    AVISO DE ACTUALIZACIÓN (revisa al abrir la app)
@@ -9076,13 +9137,22 @@ if(typeof supabase !== "undefined"){
     let codigoAcceso = (localStorage.getItem("cc_codigo_acceso") || "").trim();
     let tope = null;
     let mensajeErrorCodigo = "";
+    const nuevoHogarId = crypto.randomUUID();
     while(tope === null){
       if(!codigoAcceso){
         codigoAcceso = await ccPedirCodigoAccesoAsync(mensajeErrorCodigo);
         if(!codigoAcceso) return { necesitaCodigo: true };
       }
-      const { data, error: errCodigo } = await sbFamiliar.rpc("canjear_codigo_acceso", { codigo_input: codigoAcceso });
-      if(errCodigo) return { necesitaCodigo: true, error: errCodigo.message };
+      // Canjear el código Y crear el hogar (y unirte como admin) van en UNA
+      // sola función de la base de datos (crear_hogar_con_codigo) — así
+      // nunca puede pasar que el código quede marcado como usado sin que el
+      // hogar se haya llegado a crear (ej. la conexión se cae justo entre
+      // los dos pasos): o pasan los tres juntos, o ninguno, y el código
+      // sigue disponible para volver a intentar.
+      const { data, error: errCrear } = await sbFamiliar.rpc("crear_hogar_con_codigo", {
+        codigo_input: codigoAcceso, nuevo_hogar_id: nuevoHogarId, nombre_input: "Mi hogar"
+      });
+      if(errCrear) return { error: "creando hogar: " + errCrear.message };
       if(data === null || data === undefined){
         mensajeErrorCodigo = "Ese código no es válido o ya se usó. Intenta de nuevo.";
         codigoAcceso = "";
@@ -9091,16 +9161,6 @@ if(typeof supabase !== "undefined"){
       tope = data;
     }
     localStorage.removeItem("cc_codigo_acceso");
-
-    // Crear el hogar Y unirte como administrador se hace en una sola función
-    // de la base de datos (crear_hogar_propio) — así, si la conexión se cae
-    // a mitad de camino, Postgres deshace los dos pasos juntos y nunca queda
-    // un hogar creado sin nadie adentro.
-    const nuevoHogarId = crypto.randomUUID();
-    const { error: errCrear } = await sbFamiliar.rpc("crear_hogar_propio", {
-      nuevo_hogar_id: nuevoHogarId, tope_input: tope, nombre_input: "Mi hogar"
-    });
-    if(errCrear) return { error: "creando hogar: " + errCrear.message };
     // "nuevo: true" es la única situación en la que es seguro subir lo local
     // como punto de partida — porque este hogar lo acabamos de crear nosotros
     // mismos, así que no hay nada real en la nube que se pueda pisar.
