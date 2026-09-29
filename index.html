@@ -835,7 +835,7 @@
 
     <!-- ================= PRESUPUESTO ================= -->
     <section class="view" id="view-presupuesto">
-      <div class="card">
+      <div class="card" id="ccCardIngresos">
         <div style="display:flex; justify-content:space-between; align-items:center; gap:10px;">
           <div>
             <div class="s-txt">Ingreso mensual total</div>
@@ -2386,6 +2386,18 @@ function toast(msg){
   t._tid = setTimeout(()=>t.classList.remove("show"), 2600);
 }
 
+// Permiso de círculo familiar: lo activa el script de sincronización
+// (window.ccPuedeEditar), ausente/true = puede editar (dueño único del
+// hogar, o antes de que cargue la sincronización). Se llama al inicio de
+// cada función que agrega/edita/elimina/paga algo compartido del hogar.
+function ccPuedeEditarCheck(){
+  if(window.ccPuedeEditar === false){
+    toast("Tu cuenta no tiene permiso para editar — pídele al administrador que te lo active");
+    return false;
+  }
+  return true;
+}
+
 /* ---- Formato de miles (y decimales opcionales) en vivo para campos de dinero
    ($ 1.234.567 o $ 1.234.567,89). El punto separa miles, la coma es el decimal
    (formato es-CO), igual que México/Perú/Ecuador/Chile lo entienden con coma decimal. ---- */
@@ -2959,6 +2971,10 @@ function renderTopbar(){
     lblEl.textContent = CC_ES_PLAY ? "Ajustes" : "Apoya y ajustes";
     valEl.textContent = "⚙️ Configuración";
     valEl.style.fontSize = "18px";
+  } else if(window.ccPuedeVerIngresos === false){
+    // Presupuesto, pero sin permiso de ver ingresos: se oculta el monto.
+    lblEl.textContent = "Ingreso mensual";
+    valEl.textContent = "••••••";
   } else {
     // Presupuesto: ingreso editable
     lblEl.textContent = "Ingreso mensual";
@@ -3542,6 +3558,7 @@ function ccSetFrecuenciaPrincipal(freq){
   renderIngresos();
 }
 function savePrincipal(){
+  if(!ccPuedeEditarCheck()) return;
   if(principalFrecEdit === "quincenal"){
     const q1 = numFromMasked("edPrincipalQ1");
     const q2 = numFromMasked("edPrincipalQ2");
@@ -3570,6 +3587,7 @@ function ccCancelarEdicionPrincipal(){
 }
 /* Actualiza Q1/Q2 directo, sin pasar por el formulario completo de "Cambiar ingreso principal". */
 function ccGuardarQuincenaRapido(){
+  if(!ccPuedeEditarCheck()) return;
   const q1 = numFromMasked("rapQ1");
   const q2 = numFromMasked("rapQ2");
   if(q1<0 || q2<0){ toast("El monto no puede ser negativo."); return; }
@@ -3732,6 +3750,7 @@ function toggleAddIngreso(){
   if(f && !f.value) f.value = fechaLocalHoy();
 }
 function addIngreso(){
+  if(!ccPuedeEditarCheck()) return;
   const nombre = document.getElementById("newIngresoNombre").value.trim();
   const monto = numFromMasked("newIngresoMonto");
   const fecha = document.getElementById("newIngresoFecha").value || fechaLocalHoy();
@@ -3752,6 +3771,7 @@ function addIngreso(){
 function openIngresoEdit(id){ editingIngresoId = id; renderIngresos(); }
 function closeIngresoEdit(){ editingIngresoId = null; renderIngresos(); }
 function saveIngresoEdit(id){
+  if(!ccPuedeEditarCheck()) return;
   const it = state.ingresosOcasionales.find(x=>x.id===id);
   if(!it) return;
   const nombre = document.getElementById("edIngN_"+id).value.trim();
@@ -3766,6 +3786,7 @@ function saveIngresoEdit(id){
   toast("Ingreso actualizado");
 }
 function deleteIngreso(id){
+  if(!ccPuedeEditarCheck()) return;
   state.ingresosOcasionales = state.ingresosOcasionales.filter(i=>i.id!==id);
   recalcularIngreso();
   editingIngresoId = null;
@@ -4056,6 +4077,7 @@ function renderPresupuesto(){
   });
 
   cont.querySelectorAll(".cantInput").forEach(inp=>{
+    if(window.ccPuedeEditar === false){ inp.disabled = true; return; }
     const idx = +inp.dataset.idx;
     const esValor = state.rubros[idx].modo === "valor";
     inp.addEventListener("input", e=>{
@@ -4145,6 +4167,7 @@ function onEditModoChange(idx){
 }
 
 function saveRubroEdit(idx){
+  if(!ccPuedeEditarCheck()) return;
   const nombre = document.getElementById("editNombre_"+idx).value.trim();
   const tipo = document.getElementById("editTipo_"+idx).value;
   const modo = document.getElementById("editModo_"+idx).value;
@@ -4173,6 +4196,7 @@ function saveRubroEdit(idx){
 }
 
 function deleteRubro(idx){
+  if(!ccPuedeEditarCheck()) return;
   limpiarPendiente("rubro:"+idx);
   state.rubros.splice(idx,1);
   editingRubroIdx = null;
@@ -4205,6 +4229,7 @@ function syncNuevoModo(){
 }
 
 function addCustomRubro(){
+  if(!ccPuedeEditarCheck()) return;
   const nombre = document.getElementById("newRubroNombre").value.trim();
   const tipo = document.getElementById("newRubroTipo").value;
   const modo = document.getElementById("newRubroModo").value;
@@ -4236,6 +4261,7 @@ function addCustomRubro(){
 }
 
 function normalizarPct(){
+  if(!ccPuedeEditarCheck()) return;
   const pctRubros = state.rubros.filter(r=>r.modo==="pct");
   const total = pctRubros.reduce((s,r)=>s+r.pct,0);
   if(pctRubros.length===0){ toast("No hay rubros por porcentaje."); return; }
@@ -4388,6 +4414,7 @@ document.getElementById("gFecha").addEventListener("change", e=>{
 });
 
 function addGasto(){
+  if(!ccPuedeEditarCheck()) return;
   const fecha = document.getElementById("gFecha").value;
   const mes = document.getElementById("gMes").value;
   const anio = parseInt(document.getElementById("gAnio").value)||ANIO_HOY;
@@ -4515,6 +4542,7 @@ function ccPreviewPagoDeuda(id){
 }
 
 function registrarPagoDeuda(id){
+  if(!ccPuedeEditarCheck()) return;
   const d = state.deudas.find(x=>x.id===id);
   if(!d) return;
   const monto = numFromMasked("pagoDeudaInput_"+id);
@@ -4577,6 +4605,7 @@ function registrarPagoDeuda(id){
 }
 
 function deshacerPagoDeuda(gastoId, deudaId){
+  if(!ccPuedeEditarCheck()) return;
   const g = state.gastos.find(x=>x.id===gastoId);
   const d = state.deudas.find(x=>x.id===deudaId);
   if(!g || !d) return;
@@ -4628,6 +4657,7 @@ function deshacerPagoDeuda(gastoId, deudaId){
 /* "Editar este pago": deshace el pago del mes y deja el monto anterior listo para ajustar,
    en vez de solo borrarlo sin más (usa por dentro el mismo deshacerPagoDeuda). */
 function ccEditarPagoDeuda(gastoId, deudaId){
+  if(!ccPuedeEditarCheck()) return;
   const g = state.gastos.find(x=>x.id===gastoId);
   const montoPrevio = g ? g.monto : 0;
   deshacerPagoDeuda(gastoId, deudaId);
@@ -4641,6 +4671,7 @@ function ccEditarPagoDeuda(gastoId, deudaId){
 }
 
 function deleteGasto(id){
+  if(!ccPuedeEditarCheck()) return;
   limpiarPendiente("gasto:"+id);
   const g = state.gastos.find(x=>x.id===id);
   if(g && g.origenDeuda){ deshacerPagoDeuda(id, g.origenDeuda); return; }
@@ -4725,6 +4756,7 @@ function renderGastosFijos(){
 }
 
 async function toggleGastoFijo(nombreRubro){
+  if(!ccPuedeEditarCheck()) return;
   const ya = gastoFijoDelMes(nombreRubro);
   if(ya){
     // Desactivar: pedir confirmación
@@ -4867,6 +4899,7 @@ function openGastoEdit(id){
 }
 function closeGastoEdit(){ editingGastoId = null; renderGastos(); }
 function saveGastoEdit(id){
+  if(!ccPuedeEditarCheck()) return;
   const g = state.gastos.find(x=>x.id===id);
   if(!g) return;
   const rubro = document.getElementById("egRubro_"+id).value;
@@ -4993,6 +5026,7 @@ function parseCSVLine(line){
 }
 
 function importGastosCSV(evt){
+  if(!ccPuedeEditarCheck()) return;
   const file = evt.target.files[0];
   if(!file) return;
   const reader = new FileReader();
@@ -5050,6 +5084,7 @@ function renderUltimoRespaldo(){
   el.style.color = "var(--brand-dark)";
 }
 function importBackupJSON(evt){
+  if(!ccPuedeEditarCheck()) return;
   const file = evt.target.files[0];
   if(!file) return;
   const reader = new FileReader();
@@ -5197,6 +5232,7 @@ async function downloadFileBase64(filename, base64data, mime, tituloShare, texto
 
 let confirmandoBorrarTodo = false;
 function pedirBorrarTodo(){
+  if(!ccPuedeEditarCheck()) return;
   const btn = document.getElementById("btnBorrarTodo");
   if(confirmandoBorrarTodo){
     borrarTodo();
@@ -5211,6 +5247,7 @@ function pedirBorrarTodo(){
   }, 4000);
 }
 function borrarTodo(){
+  if(!ccPuedeEditarCheck()) return;
   confirmandoBorrarTodo = false;
   try{ localStorage.removeItem(STORAGE_KEY); localStorage.removeItem(STORAGE_KEY_V1); }catch(e){}
   state = defaultState();
@@ -5617,6 +5654,7 @@ function ccCuotaAmortizada(valor, cuotas, tasaAnual){
 }
 
 function agregarMovimientoDeuda(deudaId, {tipo, descripcion, valor, cuotas, tasaAnual, fecha}){
+  if(!ccPuedeEditarCheck()) return;
   const d = state.deudas.find(x=>x.id===deudaId);
   if(!d) return;
   if(!Array.isArray(d.movimientos)) d.movimientos = [];
@@ -5747,6 +5785,7 @@ function onExistPreview(){
 }
 
 function confirmarAgregarMovimiento(){
+  if(!ccPuedeEditarCheck()) return;
   const deudaId = document.getElementById("existDeudaId").value;
   const descripcion = document.getElementById("existDescripcion").value.trim();
   if(!deudaId){ toast("Selecciona una deuda."); return; }
@@ -5777,6 +5816,7 @@ function confirmarAgregarMovimiento(){
 }
 
 function addDeuda(){
+  if(!ccPuedeEditarCheck()) return;
   const nombre = document.getElementById("dNombre").value.trim();
   const fecha = document.getElementById("dFecha").value;
   const mesesObjetivo = parseInt(document.getElementById("dMeses").value)||0;
@@ -6010,6 +6050,7 @@ function ccInversionDiasRestantes(inv){
   return Math.ceil((venc.getTime() - Date.now())/86400000);
 }
 function addInversion(){
+  if(!ccPuedeEditarCheck()) return;
   const monto = numFromMasked("invMonto");
   const tasa = parseFloat((document.getElementById("invTasa").value||"").replace(",","."))||0;
   const dias = parseInt(document.getElementById("invPlazo").value,10)||0;
@@ -6025,6 +6066,7 @@ function addInversion(){
   toast("Inversión agregada ✓ Te avisamos un día antes de que se cumpla el plazo.");
 }
 function deleteInversion(id){
+  if(!ccPuedeEditarCheck()) return;
   state.inversiones = state.inversiones.filter(i=>i.id!==id);
   limpiarPendiente("inversion:"+id);
   saveState();
@@ -6262,6 +6304,7 @@ function ccToggleTablaCredito(){
   chev.textContent = abierta ? "▾" : "▴";
 }
 function ccAgregarCreditoComoDeuda(){
+  if(!ccPuedeEditarCheck()) return;
   if(!ccUltimoCalculoCredito) return;
   const r = ccUltimoCalculoCredito;
   const entidad = (document.getElementById("credEntidad").value||"").trim();
@@ -6368,6 +6411,7 @@ function ccPreviewAbono(id){
 
 /* Muestra un mensaje central grande explicando el abono a capital y pide aceptar */
 function pedirConfirmarAbonoCapital(id){
+  if(!ccPuedeEditarCheck()) return;
   const d = state.deudas.find(x=>x.id===id);
   if(!d) return;
   const monto = numFromMasked("abonoDeudaInput_"+id);
@@ -6402,6 +6446,7 @@ function ccCerrarModalAbono(){
   if(m) m.remove();
 }
 function ccEjecutarAbonoCapital(id){
+  if(!ccPuedeEditarCheck()) return;
   const d = state.deudas.find(x=>x.id===id);
   if(!d){ ccCerrarModalAbono(); return; }
   const monto = numFromMasked("abonoDeudaInput_"+id);
@@ -6437,6 +6482,7 @@ function ccEjecutarAbonoCapital(id){
   }, 200);
 }
 function deleteDeuda(id){
+  if(!ccPuedeEditarCheck()) return;
   limpiarPendiente("deuda:"+id);
   state.deudas = state.deudas.filter(d=>d.id!==id);
   editingDeudaId = null;
@@ -6447,6 +6493,7 @@ function deleteDeuda(id){
 }
 function openDeudaEdit(id){ editingDeudaId = id; renderDeudas(); }
 function saveDeudaEdit(id){
+  if(!ccPuedeEditarCheck()) return;
   const d = state.deudas.find(x=>x.id===id);
   if(!d) return;
   d.nombre = document.getElementById("edN_"+id).value.trim() || d.nombre;
@@ -6526,6 +6573,7 @@ let pagandoMovimientoId = null; // id del movimiento elegido dentro de ese despl
 
 /* Elimina un movimiento (compra o avance) que se agregó por error, sin afectar los demás. */
 function eliminarMovimiento(deudaId, movId){
+  if(!ccPuedeEditarCheck()) return;
   const d = state.deudas.find(x=>x.id===deudaId);
   if(!d) return;
   d.movimientos = (d.movimientos||[]).filter(m=>m.id!==movId);
@@ -6564,6 +6612,7 @@ function ccSeleccionarMovEspecifico(movId){
 }
 
 function ccPagarMovimientoEspecifico(deudaId, movId){
+  if(!ccPuedeEditarCheck()) return;
   const d = state.deudas.find(x=>x.id===deudaId);
   if(!d) return;
   const m = (d.movimientos||[]).find(x=>x.id===movId);
@@ -6775,23 +6824,28 @@ function renderDeudas(){
 let editingMetaId = null;
 
 document.getElementById("feMeses").addEventListener("input", e=>{
+  if(!ccPuedeEditarCheck()) return;
   state.fondoEmergencia.meses = parseFloat(e.target.value)||0;
   saveState(); renderAhorrosLigero(); renderDashboard();
 });
 document.getElementById("feAhorrado").addEventListener("input", e=>{
+  if(!ccPuedeEditarCheck()) return;
   state.fondoEmergencia.ahorrado = numFromMasked(e.target);
   saveState(); renderAhorrosLigero(); renderDashboard();
 });
 document.getElementById("feAporte").addEventListener("input", e=>{
+  if(!ccPuedeEditarCheck()) return;
   state.fondoEmergencia.aporteMensual = numFromMasked(e.target);
   saveState(); renderAhorrosLigero(); renderAhorroDisponible();
 });
 document.getElementById("feTasa").addEventListener("input", e=>{
+  if(!ccPuedeEditarCheck()) return;
   state.fondoEmergencia.tasaAnual = parseFloat(e.target.value)||0;
   saveState(); renderAhorrosLigero(); renderAhorroDisponible();
 });
 
 function addMeta(){
+  if(!ccPuedeEditarCheck()) return;
   const nombre = document.getElementById("mNombre").value.trim();
   const objetivo = numFromMasked("mObjetivo");
   const ahorrado = numFromMasked("mAhorrado");
@@ -6935,6 +6989,7 @@ function actualizarHintMetaEdit(id){
 }
 let abonandoMetaId = null;
 function confirmarAbonoMeta(id){
+  if(!ccPuedeEditarCheck()) return;
   const m = state.metas.find(x=>x.id===id);
   if(!m) return;
   const monto = numFromMasked("abonoMetaInput_"+id);
@@ -6947,6 +7002,7 @@ function confirmarAbonoMeta(id){
   toast("Ahorro registrado");
 }
 function deleteMeta(id){
+  if(!ccPuedeEditarCheck()) return;
   limpiarPendiente("meta:"+id);
   state.metas = state.metas.filter(m=>m.id!==id);
   editingMetaId = null;
@@ -6957,6 +7013,7 @@ function deleteMeta(id){
 }
 function openMetaEdit(id){ editingMetaId = id; renderAhorros(); }
 function saveMetaEdit(id){
+  if(!ccPuedeEditarCheck()) return;
   const m = state.metas.find(x=>x.id===id);
   if(!m) return;
   m.nombre = document.getElementById("emN_"+id).value.trim() || m.nombre;
@@ -7020,6 +7077,7 @@ function renderAhorrosLigero(){
 }
 
 function registrarAporteFondoEmergencia(){
+  if(!ccPuedeEditarCheck()) return;
   const monto = numFromMasked("feAporteMontoNuevo");
   const fechaInput = document.getElementById("feAporteFechaNueva");
   const fecha = fechaInput.value || fechaLocalHoy();
@@ -7034,6 +7092,7 @@ function registrarAporteFondoEmergencia(){
   toast("Aporte registrado");
 }
 function eliminarAporteFondoEmergencia(id){
+  if(!ccPuedeEditarCheck()) return;
   const entrada = state.fondoEmergencia.historial.find(h=>h.id===id);
   if(!entrada) return;
   limpiarPendiente("feaporte:"+id);
@@ -9267,7 +9326,11 @@ if(typeof supabase !== "undefined"){
     ccUltimoEstadoSubidoJSON = JSON.stringify(nube.datos);
     ccRegistrarActualizacionConocida(nube.actualizado_en);
     state = hidratar(nube.datos, defaultState());
-    ccSaveStateOriginal();
+    // Se guarda SOLO en el celular (sin volver a subir lo que acaba de llegar).
+    // En la primera conexión la sincronización todavía no está activa y
+    // ccSaveStateOriginal es null: antes eso lanzaba un error silencioso y un
+    // invitado con el celular recién instalado nunca recibía los datos.
+    (ccSaveStateOriginal || window.saveState)();
     renderAll();
   }
 
@@ -9358,7 +9421,15 @@ if(typeof supabase !== "undefined"){
     }
   }
 
+  // Marca de a qué hogar pertenecen los datos guardados en este celular. Sirve
+  // para no mezclar nunca los datos de un hogar con los de otro si en este
+  // mismo celular se cierra sesión y se entra a (o se crea) un hogar distinto.
+  const CC_CLAVE_HOGAR_DATOS = "cc_datos_de_hogar";
+  function ccHogarDeLosDatosLocales(){
+    try{ return localStorage.getItem(CC_CLAVE_HOGAR_DATOS); }catch(e){ return null; }
+  }
   function ccActivarSyncSaveState(){
+    try{ localStorage.setItem(CC_CLAVE_HOGAR_DATOS, ccHogarId); }catch(e){}
     if(ccSaveStateOriginal) return; // ya estaba activo
     ccSaveStateOriginal = window.saveState;
     window.saveState = function(){
@@ -9514,11 +9585,44 @@ if(typeof supabase !== "undefined"){
     ccCargarMiembros();
   };
 
+  /* ---- Permisos que el administrador le dio a este integrante ----
+     "editar", "ver_deudas" y "ver_ingresos" ausentes se toman como true (así
+     nadie pierde acceso por un hogar creado antes de que existieran). El
+     administrador siempre tiene acceso total. Con esAdmin=true y {} se
+     quitan todas las restricciones (se usa al cerrar sesión). ---- */
+  function ccAplicarPermisosHogar(esAdmin, permisos){
+    const puedeVerDeudas = esAdmin || permisos.ver_deudas !== false;
+    const puedeVerIngresos = esAdmin || permisos.ver_ingresos !== false;
+    const puedeEditar = esAdmin || permisos.editar !== false;
+    // Globales porque renderTopbar()/ccPuedeEditarCheck() viven en el script principal.
+    window.ccPuedeVerIngresos = puedeVerIngresos;
+    window.ccPuedeEditar = puedeEditar;
+    ["feMeses","feAhorrado","feAporte","feTasa"].forEach(function(id){
+      const el = document.getElementById(id);
+      if(el) el.disabled = !puedeEditar;
+    });
+    const btnDeudas = document.querySelector('.bottomnav button[data-view="deudas"]');
+    if(btnDeudas) btnDeudas.style.display = puedeVerDeudas ? "" : "none";
+    if(!puedeVerDeudas && typeof ccVistaActual !== "undefined" && ccVistaActual === "deudas") showView("inicio");
+    const cardIngresos = document.getElementById("ccCardIngresos");
+    if(cardIngresos) cardIngresos.style.display = puedeVerIngresos ? "" : "none";
+    try{ renderAll(); }catch(e){}
+  }
+
   window.ccCerrarSesionFamiliar = async function(){
     await sbFamiliar.auth.signOut();
     ccDesactivarSyncSaveState();
     ccDesactivarRealtime();
     ccUserId = null; ccHogarId = null; ccEsAdmin = false;
+    // Se olvida lo que se sabía de la nube de ESE hogar (si luego se entra a
+    // otro, se empieza de cero) y se quitan las restricciones de permisos.
+    ccUltimaActualizadaEnConocida = null;
+    ccUltimoEstadoSubidoJSON = null;
+    ccAplicarPermisosHogar(true, {});
+    const rolElSalir = document.getElementById("ccRolHogar");
+    if(rolElSalir) rolElSalir.style.display = "none";
+    const cardCirculo = document.getElementById("ccCardCirculoFamiliar");
+    if(cardCirculo) cardCirculo.style.display = "none";
     const conectado = document.getElementById("ccHogarConectado");
     const promo = document.getElementById("ccHogarPromo");
     if(conectado) conectado.style.display = "none";
@@ -9543,6 +9647,7 @@ if(typeof supabase !== "undefined"){
     }
     ccHogarId = resultado.hogarId;
     ccEsAdmin = resultado.rol === "admin";
+    ccAplicarPermisosHogar(ccEsAdmin, resultado.permisos || {});
 
     const correoEl = document.getElementById("ccCorreoSesion");
     if(correoEl) correoEl.textContent = sesionData.session.user.email || "—";
@@ -9586,12 +9691,18 @@ if(typeof supabase !== "undefined"){
     const claveYaConectado = "cc_nube_ya_conectado_" + ccHogarId;
     const yaConectadoAntes = localStorage.getItem(claveYaConectado) === "1";
 
+    // ¿Lo que hay en este celular es de OTRO hogar (se cerró sesión de uno y
+    // ahora se entra a otro)? Entonces nunca se sube aquí ni se ofrece como
+    // opción: son finanzas de otra familia.
+    const hogarDatosLocales = ccHogarDeLosDatosLocales();
+    const localEsDeOtroHogar = !!hogarDatosLocales && hogarDatosLocales !== ccHogarId;
+
     // Si quedó un cambio local que no se confirmó que subió de verdad (por
     // ejemplo: se cerró la app con mala conexión justo después de guardar,
     // o algo falló a medio camino), hay que terminar de subirlo ANTES que
     // nada — nunca se trae la nube y se pisa por encima sin más, porque
     // ahí es donde se pierde lo que se acababa de guardar.
-    if(yaConectadoAntes && ccHaySubidaPendienteGuardada()){
+    if(yaConectadoAntes && ccHaySubidaPendienteGuardada() && !localEsDeOtroHogar){
       ccActivarSyncSaveState();
       ccActivarRealtime();
       ccMostrarBannerSync("☁️ Terminando de subir un cambio pendiente...", "#0B7D5C", false);
@@ -9604,7 +9715,22 @@ if(typeof supabase !== "undefined"){
 
     const nube = await ccObtenerEstadoNube();
 
-    if(nube === null){
+    if(nube === null && resultado.nuevo && localEsDeOtroHogar){
+      // Hogar recién creado, pero lo que hay en el celular es de otro hogar:
+      // se guarda una copia aparte (por si acaso) y este hogar empieza vacío.
+      // Los datos del hogar anterior siguen intactos en la nube de ese hogar.
+      try{
+        localStorage.setItem("cc_respaldo_hogar_anterior", JSON.stringify({ hogar: hogarDatosLocales, guardado: new Date().toISOString(), datos: state }));
+      }catch(e){}
+      state = defaultState();
+      saveState();
+      renderAll();
+      ccMostrarBannerSync("☁️ Hogar nuevo creado — empieza vacío. Los datos del hogar anterior siguen guardados en ese hogar.", "#0B7D5C", true);
+      ccActivarSyncSaveState();
+      ccActivarRealtime();
+      ccSubirANube();
+      localStorage.setItem(claveYaConectado, "1");
+    } else if(nube === null){
       if(resultado.nuevo){
         // Este hogar lo acabamos de crear nosotros mismos en esta misma
         // conexión: no hay nada real en la nube todavía, así que es seguro
@@ -9621,7 +9747,7 @@ if(typeof supabase !== "undefined"){
         // pasajera.
         ccMostrarBannerSync("⚠️ No se pudieron confirmar los datos de tu hogar en la nube. Vuelve a intentar con mejor conexión antes de seguir — por ahora no se sube ni se cambia nada.", "#C0392B", false);
       }
-    } else if(!yaConectadoAntes && ccEstadoLocalTieneDatos()){
+    } else if(!yaConectadoAntes && ccEstadoLocalTieneDatos() && !localEsDeOtroHogar){
       // Choque real: la nube ya tiene datos Y este celular también — se
       // pregunta cuál de las dos versiones dejar, en vez de decidir solo.
       const fechaNube = nube.actualizado_en
