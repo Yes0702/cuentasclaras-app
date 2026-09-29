@@ -2236,6 +2236,7 @@ function hidratar(parsed, base){
   });
   s.fondoEmergencia = Object.assign({meses:3, ahorrado:0, aporteMensual:0, tasaAnual:0, historial:[]}, s.fondoEmergencia||{});
   s.fondoEmergencia.historial = Array.isArray(s.fondoEmergencia.historial) ? s.fondoEmergencia.historial : [];
+  s.inversiones = Array.isArray(s.inversiones) ? s.inversiones : [];
   s.alarmas = Array.isArray(s.alarmas) && s.alarmas.length
     ? s.alarmas.map(normalizarAlarma)
     : (s.alarma ? [normalizarAlarma(s.alarma)] : [nuevaAlarma("Recordatorio")]);
@@ -4399,18 +4400,28 @@ function registrarPagoDeuda(id){
   const tasaMensual = (d.tasaAnual||0)/100/12;
   const interesMes = Math.round(d.saldo * tasaMensual);
   const aCapital = monto - interesMes;
+  // Se guarda exactamente lo que se aplicó a capital/interés EN ESTE pago —
+  // "deshacer" (borrar o editar el pago) lo revierte leyendo estos mismos
+  // números, nunca recalculándolos con el saldo actual (que para ese momento
+  // ya cambió, y volver a calcular con el saldo nuevo da un número distinto).
+  let aCapitalAplicado = 0, interesNoPagadoAplicado = null, interesPagadoAplicado = 0;
   if(tasaMensual>0){
     if(aCapital<=0){
       // El pago no alcanza a cubrir el interés: se acumula como interés no pagado
       // (no se toca ningún movimiento; recalcularDeuda() lo suma aparte al saldo total).
-      d.interesAcumuladoNoPagado = (d.interesAcumuladoNoPagado||0) + (interesMes - monto);
-      d.interesPagado = (d.interesPagado||0) + monto;
+      interesNoPagadoAplicado = interesMes - monto;
+      d.interesAcumuladoNoPagado = (d.interesAcumuladoNoPagado||0) + interesNoPagadoAplicado;
+      interesPagadoAplicado = monto;
+      d.interesPagado = (d.interesPagado||0) + interesPagadoAplicado;
       recalcularDeuda(d);
     }else{
+      aCapitalAplicado = aCapital;
       ccDistribuirCapitalMovimientos(d, aCapital);
-      d.interesPagado = (d.interesPagado||0) + interesMes;
+      interesPagadoAplicado = interesMes;
+      d.interesPagado = (d.interesPagado||0) + interesPagadoAplicado;
     }
   }else{
+    aCapitalAplicado = monto;
     ccDistribuirCapitalMovimientos(d, monto);
   }
 
@@ -4419,7 +4430,8 @@ function registrarPagoDeuda(id){
     id: uid(), fecha: new Date(state.anioActivo, MESES.indexOf(state.mesActivo), Math.min(new Date().getDate(),28)).toISOString().slice(0,10),
     mes: state.mesActivo, anio: state.anioActivo,
     rubro: "Pago de deuda: "+d.nombre, monto: monto, nota: "Pago de deuda",
-    origenDeuda: d.id
+    origenDeuda: d.id,
+    aCapitalAplicado, interesNoPagadoAplicado, interesPagadoAplicado
   });
   ccDraftClear("pagoDeudaInput_"+id);
 
@@ -4437,17 +4449,32 @@ function deshacerPagoDeuda(gastoId, deudaId){
   const g = state.gastos.find(x=>x.id===gastoId);
   const d = state.deudas.find(x=>x.id===deudaId);
   if(!g || !d) return;
-  // Revertir el efecto en el saldo (aproximado: devolver el capital que se abonó)
   const tasaMensual = (d.tasaAnual||0)/100/12;
-  const interesMes = Math.round((d.saldo) * tasaMensual); // aprox del momento actual
-  const aCapital = g.monto - interesMes;
-  if(tasaMensual>0 && aCapital>0){
-    ccDistribuirCapitalMovimientos(d, -aCapital);
-  } else if(tasaMensual>0){
-    d.interesAcumuladoNoPagado = Math.max(0, (d.interesAcumuladoNoPagado||0) - (interesMes - g.monto));
-    recalcularDeuda(d);
+  if(g.aCapitalAplicado != null){
+    // Se revierte EXACTAMENTE lo que se aplicó en ese pago (guardado en el
+    // propio gasto) — nunca se vuelve a calcular con el saldo de ahora,
+    // porque ya cambió desde entonces y da un número distinto (ver nota en
+    // registrarPagoDeuda).
+    if(g.aCapitalAplicado > 0) ccDistribuirCapitalMovimientos(d, -g.aCapitalAplicado);
+    if(g.interesNoPagadoAplicado != null){
+      d.interesAcumuladoNoPagado = Math.max(0, (d.interesAcumuladoNoPagado||0) - g.interesNoPagadoAplicado);
+      recalcularDeuda(d);
+    }
+    if(g.interesPagadoAplicado) d.interesPagado = Math.max(0, (d.interesPagado||0) - g.interesPagadoAplicado);
   } else {
-    ccDistribuirCapitalMovimientos(d, -g.monto);
+    // Gasto de pago de deuda de antes de este cambio, sin el detalle guardado
+    // — se aproxima con el saldo actual como se hacía hasta ahora (mejor eso
+    // que no poder deshacerlo).
+    const interesMes = Math.round((d.saldo) * tasaMensual);
+    const aCapital = g.monto - interesMes;
+    if(tasaMensual>0 && aCapital>0){
+      ccDistribuirCapitalMovimientos(d, -aCapital);
+    } else if(tasaMensual>0){
+      d.interesAcumuladoNoPagado = Math.max(0, (d.interesAcumuladoNoPagado||0) - (interesMes - g.monto));
+      recalcularDeuda(d);
+    } else {
+      ccDistribuirCapitalMovimientos(d, -g.monto);
+    }
   }
   state.gastos = state.gastos.filter(x=>x.id!==gastoId);
   saveState();
@@ -4474,6 +4501,7 @@ function ccEditarPagoDeuda(gastoId, deudaId){
 }
 
 function deleteGasto(id){
+  limpiarPendiente("gasto:"+id);
   const g = state.gastos.find(x=>x.id===id);
   if(g && g.origenDeuda){ deshacerPagoDeuda(id, g.origenDeuda); return; }
   state.gastos = state.gastos.filter(g=>g.id!==id);
@@ -4685,7 +4713,9 @@ function pintarGasto(g){
         </div>
         <div class="r-amount" onclick="openGastoEdit('${g.id}')" style="cursor:pointer;">${money(g.monto)}</div>
         <button class="r-edit" onclick="openGastoEdit('${g.id}')" aria-label="Editar" title="Editar">✎</button>
-        <button class="r-del" onclick="deleteGasto('${g.id}')" aria-label="Eliminar" title="Eliminar">×</button>
+        ${esPendiente("gasto:"+g.id)
+          ? `<button class="r-del confirm" onclick="deleteGasto('${g.id}')">✓ Eliminar</button>`
+          : `<button class="r-del" onclick="pideConfirmar('gasto:${g.id}', renderGastos)" aria-label="Eliminar" title="Eliminar">×</button>`}
       </div>`;
 }
 
@@ -4907,13 +4937,21 @@ function importBackupJSON(evt){
     const resumen = `Este respaldo tiene:\n· ${nG} gasto(s)\n· ${nD} deuda(s)\n· ${nM} meta(s)\n· ${nOc} ingreso(s) adicional(es)\n\n¿Reemplazar tus datos actuales con este respaldo?`;
     const ok = await ccConfirmAsync(resumen);
     if(!ok){ evt.target.value = ""; return; }
+    // Importante: solo se guarda (saveState) DESPUÉS de que el nuevo estado ya
+    // se haya pintado sin errores — si algo del respaldo está corrupto y
+    // renderAll() truena, no queremos haber persistido ya un estado roto que
+    // deje la app pegada la próxima vez que se abra.
+    const anterior = state;
     try{
       state = hidratar(data, defaultState());
-      saveState();
       renderAll();
+      saveState();
       programarAlarma();
       toast(`Restaurado ✓ · ${nG} gastos, ${nD} deudas, ${nM} metas`);
     }catch(err){
+      console.error("importBackupJSON:", err);
+      state = anterior;
+      try{ renderAll(); }catch(e2){ /* con el estado anterior esto no debería fallar */ }
       toast("Error al restaurar. El respaldo puede estar dañado.");
     }
     evt.target.value = "";
@@ -6009,7 +6047,7 @@ function ccAmortizarUVR(montoPesos, tasaEA, n, uvrHoy, inflacionAnual){
   return {
     cuotaMes1: tabla[0].cuota, cuotaMesN: tabla[tabla.length-1].cuota, cuota: tabla[0].cuota,
     totalPagado: totalPagadoPesos, totalIntereses: totalPagadoPesos-montoPesos,
-    tabla, monto: montoPesos, plazo:n
+    tabla, monto: montoPesos, plazo:n, iMensualUvr
   };
 }
 function ccCalcularCredito(){
@@ -6025,12 +6063,22 @@ function ccCalcularCredito(){
     const iMensual = tipoTasa==="ea" ? (Math.pow(1+tasaVal/100, 1/12)-1) : (tasaVal/100);
     resultado = ccAmortizarFija(monto, iMensual, plazo);
     resultado.tipo = "fija";
+    // Tasa anual "nominal" equivalente (la que usa el resto de la app en sus
+    // deudas: tasaAnual/100/12 = interés mensual) — así, si este crédito se
+    // agrega como deuda, sigue cobrando intereses con el mismo interés
+    // mensual que ya se le mostró al usuario en esta calculadora.
+    resultado.tasaAnualEquivalente = iMensual * 12 * 100;
   } else {
     const uvrHoy = parseFloat((document.getElementById("credUvrHoy").value||"").replace(",","."))||0;
     const inflacion = parseFloat((document.getElementById("credInflacion").value||"").replace(",","."))||0;
     if(uvrHoy<=0){ toast("Ingresa el valor de la UVR de hoy."); return; }
     resultado = ccAmortizarUVR(monto, tasaVal/100, plazo, uvrHoy, inflacion/100);
     resultado.tipo = "uvr";
+    // Aproximación: el interés real de un crédito UVR cambia cada mes con la
+    // inflación (la cuota en pesos sube), algo que el modelo simple de
+    // "deudas" no representa — se guarda al menos el interés en UVR
+    // equivalente a tasa nominal anual, mejor que dejarlo en 0%.
+    resultado.tasaAnualEquivalente = (resultado.iMensualUvr||0) * 12 * 100;
   }
   ccUltimoCalculoCredito = resultado;
   ccRenderResultadoCredito(resultado);
@@ -6078,7 +6126,7 @@ function ccAgregarCreditoComoDeuda(){
   state.deudas.push({
     id: uid(), nombre, inicial: r.monto, saldo: r.monto,
     pago: Math.round(cuotaInicial), fecha:"", mesesObjetivo: r.plazo,
-    tasaAnual: 0, interesPagado: 0, diaPago: 0
+    tasaAnual: r.tasaAnualEquivalente||0, interesPagado: 0, diaPago: 0
   });
   saveState();
   renderDeudas();
@@ -8320,7 +8368,16 @@ document.getElementById("invFecha").value = fechaLocalHoy();
   const el = document.getElementById(id);
   if(el) maskMiles(el);
 });
-renderAll();
+try{
+  renderAll();
+}catch(e){
+  // Si algo en los datos guardados hace que pintar la pantalla truene, que
+  // no se quede la app en blanco sin explicación — y sobre todo, que el
+  // resto del script (incluida la sincronización con la nube) siga
+  // corriendo igual.
+  console.error("renderAll() al iniciar:", e);
+  toast("Hubo un problema mostrando tus datos guardados. Exporta un respaldo desde Ajustes en cuanto puedas, por si acaso.");
+}
 programarAlarma();
 
 /* ---- Aviso de ayuda por WhatsApp al entrar a la app ---- */
