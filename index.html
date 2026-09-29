@@ -1966,6 +1966,13 @@ function ccFormatoFechaCorta(fechaISO){
   return dia + " " + (MESES[mesIdx] ? MESES[mesIdx].toLowerCase() : "");
 }
 const TIPOS = ["Fijo","Variable necesario","Flexible/Deseo","Ahorro"];
+/* Canal de distribución. En el código siempre dice "github" (APK de GitHub, PWA y web).
+   El workflow lo cambia a "play" SOLO dentro del AAB para Google Play (ver
+   scripts/variante-play.js): en esa versión no hay actualizador propio (las
+   actualizaciones llegan por la tienda) ni donaciones por fuera de Google Play. */
+const CC_CANAL = "github";
+const CC_ES_PLAY = CC_CANAL === "play";
+const CC_URL_PLAY = "https://play.google.com/store/apps/details?id=com.cuentasclaras.presupuesto";
 const STORAGE_KEY   = "cuentasClaras_v2";
 const STORAGE_KEY_V1 = "cuentasClaras_v1";
 const ANIO_HOY = new Date().getFullYear();
@@ -2930,6 +2937,15 @@ function renderTopbar(){
         ? "Es lo que tu presupuesto destina a ahorro este mes."
         : "💪 Aún no destinas dinero al ahorro. ¡Empieza con un rubro de Ahorro en tu presupuesto!";
     }
+  } else if(ccVistaActual === "inicio" && CC_ES_PLAY){
+    lblEl.textContent = "Recomienda la app 💚";
+    valEl.textContent = "📲 Compartir";
+    valEl.style.fontSize = "18px";
+    if(extra){
+      extra.style.display = "block";
+      extra.textContent = "Toca para enviársela a alguien →";
+    }
+    if(box){ box.classList.add("clickable"); box.onclick = compartirApp; }
   } else if(ccVistaActual === "inicio"){
     lblEl.textContent = "Apoya la app 💚";
     if(logo) logo.style.display = "block";
@@ -2940,7 +2956,7 @@ function renderTopbar(){
     }
     if(box){ box.classList.add("clickable"); box.onclick = ccIrApoyar; }
   } else if(ccVistaActual === "ajustes"){
-    lblEl.textContent = "Apoya y ajustes";
+    lblEl.textContent = CC_ES_PLAY ? "Ajustes" : "Apoya y ajustes";
     valEl.textContent = "⚙️ Configuración";
     valEl.style.fontSize = "18px";
   } else {
@@ -7298,6 +7314,9 @@ async function ccFetchConTimeout(url, opciones, ms){
 }
 
 async function ccChequearActualizacion(manual){
+  // En la versión de Google Play las actualizaciones las hace la tienda: el botón
+  // abre la ficha de la app y el chequeo automático no hace nada.
+  if(CC_ES_PLAY){ if(manual) abrirExterno(CC_URL_PLAY); return; }
   if(!CONFIG.apiVersion && !CONFIG.urlVersion){ if(manual) toast("Chequeo no configurado."); return; }
   let versionRemota = null;
   let urlApk = CONFIG.urlVersion ? CONFIG.urlVersion.replace("version.json","CuentasClaras.apk") : "";
@@ -7487,6 +7506,7 @@ function ccCerrarModalDescargaApk(){
   if(m) m.remove();
 }
 async function ccDescargarEInstalarAPK(url){
+  if(CC_ES_PLAY){ abrirExterno(CC_URL_PLAY); return; }
   // Este flujo solo aplica dentro del APK de Android. En navegador o si falta el plugin, seguimos con el método viejo.
   const FS = window.Capacitor && Capacitor.Plugins && Capacitor.Plugins.Filesystem;
   const FO = window.Capacitor && Capacitor.Plugins && Capacitor.Plugins.FileOpener;
@@ -7545,7 +7565,7 @@ function abrirExterno(url){
 }
 
 function compartirApp(){
-  const url = "https://yes0702.github.io/cuentasclaras/";
+  const url = CC_ES_PLAY ? CC_URL_PLAY : "https://yes0702.github.io/cuentasclaras/";
   const mensaje = "📲 Te recomiendo Cuentas Claras, la app para organizar el presupuesto del hogar. Gratis, sin anuncios y sin crear cuenta. Descárgala aquí: " + url;
   const SH = (window.Capacitor && Capacitor.Plugins && Capacitor.Plugins.Share) ? Capacitor.Plugins.Share : null;
   if(SH){
@@ -7627,7 +7647,7 @@ function renderDonacion(){
   const cont = document.getElementById("bloqueDonacion");
   if(!cont) return;
   const hayAlgo = CONFIG.nequi || CONFIG.breb || CONFIG.pseUrl || CONFIG.paypalUrl;
-  if(!CONFIG.mostrarDonacion || !hayAlgo){ cont.innerHTML = ""; return; }
+  if(CC_ES_PLAY || !CONFIG.mostrarDonacion || !hayAlgo){ cont.innerHTML = ""; return; }
 
   // Fila genérica (para Nequi u otros medios de texto)
   const fila = (etiqueta, valor, nota) => `
