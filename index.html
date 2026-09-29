@@ -9087,17 +9087,23 @@ if(typeof supabase !== "undefined"){
     ccSubiendoAhora = true;
     ccMarcarPendiente(); // se marca ANTES de intentar: si algo falla a medio camino, no se pierde el rastro
     const datosJSON = JSON.stringify(state);
-    const fechaISO = new Date().toISOString();
     try{
-      const { error } = await sbFamiliar.from("estado_app")
-        .upsert({ hogar_id: ccHogarId, datos: state, actualizado_en: fechaISO });
+      // La fecha "actualizado_en" ya no la pone este celular — la pone el
+      // servidor de Supabase (trigger cc_set_actualizado_en), así el reloj
+      // de un celular mal configurado no puede romper la comparación de
+      // "qué es más nuevo" para todo el hogar. Por eso se pide de vuelta
+      // con .select() en vez de calcularla aquí.
+      const { data, error } = await sbFamiliar.from("estado_app")
+        .upsert({ hogar_id: ccHogarId, datos: state })
+        .select("actualizado_en")
+        .maybeSingle();
       if(error){
         console.error(error);
         ccMostrarBannerSync("⚠️ No se pudo subir el último cambio. Reintentando...", "#C0392B", false);
         ccSubidaPendiente = true;
       } else {
         ccUltimoEstadoSubidoJSON = datosJSON;
-        ccRegistrarActualizacionConocida(fechaISO);
+        ccRegistrarActualizacionConocida(data ? data.actualizado_en : null);
         ccQuitarMarcaPendiente();
         ccMostrarBannerSync("☁️ Datos subidos a la nube", "#0B7D5C", true);
         if(ccSubidaPendiente){ ccSubidaPendiente = false; ccSubirANube(); }
