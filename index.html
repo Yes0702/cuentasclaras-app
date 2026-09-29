@@ -7187,8 +7187,12 @@ function mostrarAvisoActualizacion(info){
   div.id = "ccUpdateBanner";
   div.style.cssText = "position:fixed; left:12px; right:12px; bottom:78px; z-index:9000;"+
     "background:linear-gradient(135deg,#13B183,#0B7D5C); color:#fff; border-radius:16px;"+
-    "padding:14px 16px; box-shadow:0 10px 30px rgba(0,0,0,.25); display:flex; align-items:center; gap:12px;";
-  const novedades = info.novedades ? `<div style="font-size:12px; opacity:.9; margin-top:2px;">${esc(info.novedades)}</div>` : "";
+    "padding:14px 16px; box-shadow:0 10px 30px rgba(0,0,0,.25); display:flex; align-items:flex-start; gap:12px;"+
+    "max-height:min(340px, 55vh); overflow:hidden;";
+  // Si la descripción de la versión es muy larga, se hace scroll adentro de
+  // este cuadrito en vez de estirar todo el aviso — así el botón de
+  // "Descargar" y el número de versión nunca se salen de la pantalla.
+  const novedades = info.novedades ? `<div style="font-size:12px; opacity:.9; margin-top:2px; max-height:120px; overflow-y:auto; white-space:pre-wrap; padding-right:4px;">${esc(info.novedades)}</div>` : "";
   div.innerHTML = `
     <div style="flex:1; min-width:0;">
       <div style="font-weight:800; font-size:14px;">🎉 Nueva versión ${esc(info.version)}</div>
