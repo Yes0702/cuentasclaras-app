@@ -2122,7 +2122,7 @@ function normalizarRubro(r, ingreso){
     valor: Number(r.valor)||0,
     pct: Number(r.pct)||0,
     diaPago: Number(r.diaPago)||0,    // conservar el día de pago (recordatorio)
-    icono: r.icono || ""              // "" = usar el sugerido automático según el nombre
+    icono: String(r.icono || "").replace(/[<>"'&]/g, "").slice(0, 16)   // "" = usar el sugerido automático según el nombre
   };
   if(out.modo==="valor" && !out.valor && r.pct) out.valor = Math.round(ingreso*(Number(r.pct)||0)/100);
   return out;
@@ -2139,7 +2139,32 @@ function normalizarGasto(g){
   if(!anio) anio = ANIO_HOY;
   if(!MESES.includes(mes) && /^\d{4}-\d{2}-\d{2}$/.test(fecha)) mes = MESES[Number(fecha.slice(5,7))-1];
   if(!MESES.includes(mes)) mes = MESES[0];
-  return { id: g.id || uid(), fecha, mes, anio, rubro: g.rubro||"Extras", monto: Number(g.monto)||0, nota: g.nota||"" };
+  // Object.assign conserva los datos extra del gasto (origenDeuda, origenMovimiento,
+  // aCapitalAplicado, etc.). Antes se reconstruía solo con estos 7 campos y cada vez
+  // que se abría la app se perdía la marca de "este gasto es el pago de la deuda X".
+  return Object.assign({}, g, { id: g.id || uid(), fecha, mes, anio, rubro: g.rubro||"Extras", monto: Number(g.monto)||0, nota: g.nota||"" });
+}
+
+/* Reparación de datos: los pagos de deuda guardados mientras existía el error de arriba
+   quedaron sin su marca origenDeuda. Se vuelven a enlazar por el nombre del rubro
+   ("Pago de deuda: <nombre>"), SOLO si hay exactamente una deuda con ese nombre — si hay
+   duda, se deja como está. Si la nota dice qué compra/avance se pagó y esa descripción es
+   única dentro de la deuda, también se recupera origenMovimiento. */
+function ccReenlazarPagosDeDeuda(gastos, deudas){
+  const PREFIJO = "Pago de deuda: ";
+  (gastos||[]).forEach(g=>{
+    if(g.origenDeuda || typeof g.rubro !== "string" || g.rubro.indexOf(PREFIJO) !== 0) return;
+    const nombre = g.rubro.slice(PREFIJO.length);
+    const candidatas = (deudas||[]).filter(d=> d.nombre === nombre);
+    if(candidatas.length !== 1) return;
+    const d = candidatas[0];
+    g.origenDeuda = d.id;
+    if(typeof g.nota === "string" && g.nota.indexOf("Pago: ") === 0){
+      const desc = g.nota.slice("Pago: ".length);
+      const movs = (d.movimientos||[]).filter(m=> (m.descripcion||(m.tipo==="avance"?"Avance en efectivo":"Compra")) === desc);
+      if(movs.length === 1) g.origenMovimiento = movs[0].id;
+    }
+  });
 }
 
 let state = loadState();
@@ -2234,6 +2259,7 @@ function hidratar(parsed, base){
     m.aporteMensual = m.aporteMensual||0;
     return m;
   });
+  ccReenlazarPagosDeDeuda(s.gastos, s.deudas);
   s.fondoEmergencia = Object.assign({meses:3, ahorrado:0, aporteMensual:0, tasaAnual:0, historial:[]}, s.fondoEmergencia||{});
   s.fondoEmergencia.historial = Array.isArray(s.fondoEmergencia.historial) ? s.fondoEmergencia.historial : [];
   s.inversiones = Array.isArray(s.inversiones) ? s.inversiones : [];
@@ -2244,6 +2270,7 @@ function hidratar(parsed, base){
   s.anioActivo = Number(s.anioActivo)||ANIO_HOY;
   if(!MESES.includes(s.mesActivo)) s.mesActivo = MESES[new Date().getMonth()];
   s.version = 3;
+  ccLimpiarIdsEstado(s);
   return s;
 }
 
@@ -2281,7 +2308,23 @@ function ccTogglePlegable(idCaja){
   if(titulo) titulo.setAttribute("aria-expanded", abierta ? "true" : "false");
 }
 function uid(){ return Date.now().toString(36) + Math.random().toString(36).slice(2,7); }
-function esc(s){ return String(s==null?"":s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;"); }
+function esc(s){ return String(s==null?"":s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;").replace(/'/g,"&#39;"); }
+/* Para textos que van DENTRO de un onclick="funcion('...')". esc() solo no basta:
+   el navegador convierte &#39; de vuelta en ' antes de correr el JavaScript, y un
+   nombre como "D'Ruth" cerraba la comilla antes de tiempo y rompía el botón. */
+function escJs(s){ return esc(String(s==null?"":s).replace(/\\/g,"\\\\").replace(/'/g,"\\'").replace(/\r?\n/g,"\\n")); }
+/* Los identificadores (id) se meten sin comillas especiales en muchos onclick. Como
+   los datos del hogar se comparten, se limpian al cargar para que solo tengan letras,
+   números, - y _ (lo que siempre genera la app); así nadie puede colar código ahí. */
+function ccIdSeguro(v){ return String(v).replace(/[^A-Za-z0-9_-]/g, ""); }
+function ccLimpiarIdsEstado(obj, prof){
+  if(!obj || typeof obj !== "object" || (prof||0) > 6) return;
+  if(Array.isArray(obj)){ obj.forEach(x=> ccLimpiarIdsEstado(x, (prof||0)+1)); return; }
+  ["id","origenDeuda","origenMovimiento"].forEach(k=>{
+    if(typeof obj[k] === "string") obj[k] = ccIdSeguro(obj[k]);
+  });
+  Object.keys(obj).forEach(k=>{ if(obj[k] && typeof obj[k] === "object") ccLimpiarIdsEstado(obj[k], (prof||0)+1); });
+}
 const CC_TEMA_KEY = "cc_tema";
 function ccAplicarTema(modo){
   const root = document.documentElement;
@@ -4252,7 +4295,7 @@ function ccRenderPickerRubro(){
   const lista = q ? ccRubrosParaPicker.filter(r=>r.nombre.toLowerCase().includes(q)) : ccRubrosParaPicker;
   if(!lista.length){ cont.innerHTML = `<div class="empty-state">No hay ningún rubro que coincida.</div>`; return; }
   cont.innerHTML = lista.map(r=>`
-    <div onclick="ccElegirRubroGasto('${esc(r.nombre)}')" style="display:flex; align-items:center; gap:10px; padding:11px 4px; border-bottom:1px solid var(--line-soft); cursor:pointer; font-size:14.5px;">
+    <div onclick="ccElegirRubroGasto('${escJs(r.nombre)}')" style="display:flex; align-items:center; gap:10px; padding:11px 4px; border-bottom:1px solid var(--line-soft); cursor:pointer; font-size:14.5px;">
       <span style="font-size:19px;">${ccIconoRubro(r)}</span><span>${esc(r.nombre)}</span>
     </div>`).join("");
 }
@@ -4522,7 +4565,16 @@ function deshacerPagoDeuda(gastoId, deudaId){
   const d = state.deudas.find(x=>x.id===deudaId);
   if(!g || !d) return;
   const tasaMensual = (d.tasaAnual||0)/100/12;
-  if(g.aCapitalAplicado != null){
+  const movPagado = g.origenMovimiento ? (d.movimientos||[]).find(m=>m.id===g.origenMovimiento) : null;
+  if(movPagado){
+    // Pago de una compra/avance específico ("Pagar este movimiento"): se le devuelve
+    // exactamente lo pagado a ESE movimiento, no se reparte entre todos.
+    movPagado.saldo = Math.round((movPagado.saldo||0) + (g.monto||0));
+    if(movPagado.valor) movPagado.saldo = Math.min(movPagado.saldo, movPagado.valor);
+    movPagado.activo = movPagado.saldo > 0;
+    if(movPagado.cuotaMensual>0) movPagado.cuotasPagadas = Math.min(movPagado.cuotas||0, Math.round(((movPagado.valor||0)-movPagado.saldo)/movPagado.cuotaMensual));
+    recalcularDeuda(d);
+  } else if(g.aCapitalAplicado != null){
     // Se revierte EXACTAMENTE lo que se aplicó en ese pago (guardado en el
     // propio gasto) — nunca se vuelve a calcular con el saldo de ahora,
     // porque ya cambió desde entonces y da un número distinto (ver nota en
@@ -4647,7 +4699,7 @@ function renderGastosFijos(){
           </div>
         </div>
         <button class="switch ${activo?"on":""}" style="flex:0 0 auto;"
-          onclick="toggleGastoFijo('${esc(r.nombre)}')" aria-label="Marcar pagado"></button>
+          onclick="toggleGastoFijo('${escJs(r.nombre)}')" aria-label="Marcar pagado"></button>
       </div>`;
     }).join("") +
     `<div style="display:flex; justify-content:space-between; align-items:center; margin-top:12px; padding-top:10px; border-top:1px solid #E9C9A3;">
@@ -7322,7 +7374,7 @@ function mostrarAvisoActualizacion(info){
       <div style="font-weight:800; font-size:14px;">🎉 Nueva versión ${esc(info.version)}</div>
       ${novedades}
     </div>
-    <button onclick="ccDescargarActualizacion('${esc(info.url||"")}')"
+    <button onclick="ccDescargarActualizacion('${escJs(info.url||"")}')"
       style="flex:0 0 auto; background:#fff; color:#0B7D5C; border:none; border-radius:12px; padding:10px 16px; font-weight:800; font-size:13px; cursor:pointer;">
       Descargar
     </button>
@@ -7360,8 +7412,8 @@ function ccDescargarActualizacion(url){
       </div>
       <div style="font-size:12px; color:var(--ink-soft); margin-bottom:16px;">La actualización normalmente conserva tus datos, pero un respaldo te protege por si acaso.</div>
       <div style="display:flex; flex-direction:column; gap:9px;">
-        <button onclick="ccRespaldarYActualizar('${esc(url)}')" style="background:var(--brand-dark); color:#fff; border:none; border-radius:12px; padding:13px; font-weight:800; cursor:pointer;">💾 Respaldar y luego actualizar</button>
-        <button onclick="ccCerrarModalRespUpd(); ccDescargarEInstalarAPK('${esc(url)}');" style="background:var(--surface-2); color:var(--ink); border:none; border-radius:12px; padding:12px; font-weight:700; cursor:pointer;">Actualizar sin respaldar</button>
+        <button onclick="ccRespaldarYActualizar('${escJs(url)}')" style="background:var(--brand-dark); color:#fff; border:none; border-radius:12px; padding:13px; font-weight:800; cursor:pointer;">💾 Respaldar y luego actualizar</button>
+        <button onclick="ccCerrarModalRespUpd(); ccDescargarEInstalarAPK('${escJs(url)}');" style="background:var(--surface-2); color:var(--ink); border:none; border-radius:12px; padding:12px; font-weight:700; cursor:pointer;">Actualizar sin respaldar</button>
         <button onclick="ccCerrarModalRespUpd()" style="background:transparent; color:var(--ink-soft); border:none; padding:6px; font-weight:600; cursor:pointer;">Cancelar</button>
       </div>
     </div>`;
@@ -7584,7 +7636,7 @@ function renderDonacion(){
         <div class="s-txt">${etiqueta}${nota ? ` <span style="font-weight:500; color:var(--ink-soft); font-size:11px;">· ${nota}</span>` : ""}</div>
         <div style="font-size:16px; font-weight:700; color:var(--ink); letter-spacing:0.4px; margin-top:3px; overflow-wrap:anywhere;">${esc(valor)}</div>
       </div>
-      <button class="btn-ghost" style="flex:0 0 auto; margin-top:0; white-space:nowrap; padding:9px 18px;" onclick="copiarTexto('${esc(valor)}','${etiqueta} copiado')">Copiar</button>
+      <button class="btn-ghost" style="flex:0 0 auto; margin-top:0; white-space:nowrap; padding:9px 18px;" onclick="copiarTexto('${escJs(valor)}','${etiqueta} copiado')">Copiar</button>
     </div>`;
 
   // Bloque especial de Bre-B: logo arriba, llave horizontal grande, botón ancho
@@ -7597,7 +7649,7 @@ function renderDonacion(){
       <div style="background:var(--surface-2); border-radius:12px; padding:14px 16px; text-align:center; margin-bottom:10px;">
         <div style="font-size:20px; font-weight:800; color:var(--ink); letter-spacing:0.5px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${esc(CONFIG.breb)}</div>
       </div>
-      <button class="btn-primary" style="width:100%; margin:0;" onclick="copiarTexto('${esc(CONFIG.breb)}','Llave Bre-B copiada')">Copiar llave</button>
+      <button class="btn-primary" style="width:100%; margin:0;" onclick="copiarTexto('${escJs(CONFIG.breb)}','Llave Bre-B copiada')">Copiar llave</button>
       <div class="hint" style="margin-top:10px; text-align:center;">
         Funciona desde <b>cualquier banco</b>: Nequi, Bancolombia, Daviplata, Lulo, Nu y más.
       </div>
@@ -7611,7 +7663,7 @@ function renderDonacion(){
         <span class="s-txt" style="font-weight:700;">PayPal</span>
         <span style="font-weight:500; color:var(--ink-soft); font-size:11.5px;">· desde cualquier país</span>
       </div>
-      <button class="btn-primary" style="width:100%; margin:0;" onclick="abrirExterno('${esc(CONFIG.paypalUrl)}')">Aportar por PayPal</button>
+      <button class="btn-primary" style="width:100%; margin:0;" onclick="abrirExterno('${escJs(CONFIG.paypalUrl)}')">Aportar por PayPal</button>
       <div class="hint" style="margin-top:10px; text-align:center;">
         La opción para aportar <b>fuera de Colombia</b>: México, Perú, Ecuador, Chile y el resto del mundo.
       </div>
@@ -7628,7 +7680,7 @@ function renderDonacion(){
       ${CONFIG.nequi ? fila("Nequi", CONFIG.nequi, "gratis") : ""}
       ${bloqueBreb}
       ${bloquePaypal}
-      ${CONFIG.pseUrl ? `<button class="btn-ghost" style="width:100%;margin-top:12px;" onclick="abrirExterno('${esc(CONFIG.pseUrl)}')">Pagar con PSE / tarjeta</button>` : ""}
+      ${CONFIG.pseUrl ? `<button class="btn-ghost" style="width:100%;margin-top:12px;" onclick="abrirExterno('${escJs(CONFIG.pseUrl)}')">Pagar con PSE / tarjeta</button>` : ""}
     </div>`;
 }
 
@@ -9345,7 +9397,7 @@ if(typeof supabase !== "undefined"){
     const { data, error } = await sbFamiliar.rpc("obtener_miembros_hogar");
     if(error){
       console.error(error);
-      cont.innerHTML = '<div class="hint" style="color:var(--red); font-weight:600;">⚠️ No se pudo cargar el círculo: ' + error.message + '</div>';
+      cont.innerHTML = '<div class="hint" style="color:var(--red); font-weight:600;">⚠️ No se pudo cargar el círculo: ' + esc(error.message) + '</div>';
       return;
     }
     cont.innerHTML = (data && data.length ? data : []).map(function(m){
@@ -9355,25 +9407,25 @@ if(typeof supabase !== "undefined"){
       const puedeVerIngresos = permisos.ver_ingresos !== false;
       const esAdmin = m.rol === "admin";
       return '<div style="border-top:1px solid var(--line); padding:12px 0;">'
-        + '<div style="font-weight:700; font-size:13.5px;">' + m.correo + (m.es_yo ? ' (tú)' : '') + '</div>'
+        + '<div style="font-weight:700; font-size:13.5px;">' + esc(m.correo) + (m.es_yo ? ' (tú)' : '') + '</div>'
         + '<div class="hint" style="margin:2px 0 8px;">' + (esAdmin ? 'Administrador — acceso total' : 'Integrante') + '</div>'
         + (esAdmin ? '' :
             '<div class="switch-row">'
               + '<div style="min-width:0; flex:1;"><div class="s-txt">Puede editar y agregar</div></div>'
               + '<button class="switch ' + (puedeEditar ? 'on' : '') + '" style="flex:0 0 auto;" '
-              + 'onclick="ccCambiarPermiso(\'' + m.user_id + '\',\'editar\',' + (puedeEditar ? 'false' : 'true') + ')" '
+              + 'onclick="ccCambiarPermiso(\'' + ccIdSeguro(m.user_id) + '\',\'editar\',' + (puedeEditar ? 'false' : 'true') + ')" '
               + 'aria-label="Puede editar y agregar"></button>'
             + '</div>'
             + '<div class="switch-row">'
               + '<div style="min-width:0; flex:1;"><div class="s-txt">Puede ver deudas</div></div>'
               + '<button class="switch ' + (puedeVerDeudas ? 'on' : '') + '" style="flex:0 0 auto;" '
-              + 'onclick="ccCambiarPermiso(\'' + m.user_id + '\',\'ver_deudas\',' + (puedeVerDeudas ? 'false' : 'true') + ')" '
+              + 'onclick="ccCambiarPermiso(\'' + ccIdSeguro(m.user_id) + '\',\'ver_deudas\',' + (puedeVerDeudas ? 'false' : 'true') + ')" '
               + 'aria-label="Puede ver deudas"></button>'
             + '</div>'
             + '<div class="switch-row">'
               + '<div style="min-width:0; flex:1;"><div class="s-txt">Puede ver ingresos</div></div>'
               + '<button class="switch ' + (puedeVerIngresos ? 'on' : '') + '" style="flex:0 0 auto;" '
-              + 'onclick="ccCambiarPermiso(\'' + m.user_id + '\',\'ver_ingresos\',' + (puedeVerIngresos ? 'false' : 'true') + ')" '
+              + 'onclick="ccCambiarPermiso(\'' + ccIdSeguro(m.user_id) + '\',\'ver_ingresos\',' + (puedeVerIngresos ? 'false' : 'true') + ')" '
               + 'aria-label="Puede ver ingresos"></button>'
             + '</div>')
         + '</div>';
