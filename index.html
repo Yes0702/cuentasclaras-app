@@ -7711,7 +7711,7 @@ const CONFIG = {
   apiVersion: "https://api.github.com/repos/Yes0702/cuentasclaras/releases/latest",
   urlVersion: "https://github.com/Yes0702/cuentasclaras/releases/latest/download/version.json"
 };
-const APP_VERSION = "9.14";
+const APP_VERSION = "9.15";
 
 /* =====================================================================
    AVISO DE ACTUALIZACIÓN (revisa al abrir la app)
@@ -10027,14 +10027,17 @@ if(typeof supabase !== "undefined"){
       return a.data ? { conflicto:true, fecha: a.data.actualizado_en } : null;
     };
     if(base){
-      const u = await sbFamiliar.from("estado_app").update({ datos }).eq("hogar_id", ccHogarId).eq("actualizado_en", base).select("actualizado_en");
+      // La fecha la pone el servidor si ya se ejecutó el SQL nuevo; si no, se pone
+      // aquí, siempre mayor que la anterior (así los demás notan el cambio).
+      const fecha = new Date(Math.max(Date.now(), new Date(base).getTime() + 1)).toISOString();
+      const u = await sbFamiliar.from("estado_app").update({ datos, actualizado_en: fecha }).eq("hogar_id", ccHogarId).eq("actualizado_en", base).select("actualizado_en");
       if(u.error) return { error: u.error };
       if(u.data && u.data.length) return { ok:true, fecha: u.data[0].actualizado_en };
       const a = await leerActual();
       if(a) return a;
     }
     // Sin base (o la fila ya no existe): solo se crea; si ya existía, es conflicto.
-    const i = await sbFamiliar.from("estado_app").insert({ hogar_id: ccHogarId, datos }).select("actualizado_en").maybeSingle();
+    const i = await sbFamiliar.from("estado_app").insert({ hogar_id: ccHogarId, datos, actualizado_en: new Date().toISOString() }).select("actualizado_en").maybeSingle();
     if(i.error){
       if(String(i.error.code) === "23505" || /duplicate/i.test(String(i.error.message || ""))){
         const a = await leerActual();
