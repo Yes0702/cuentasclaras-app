@@ -812,8 +812,8 @@
         <div id="inversionesBarsList"></div>
       </div>
 
-      <h2 class="section-title">Deudas<div class="rule"></div></h2>
-      <div class="card">
+      <h2 class="section-title" id="secDeudasInicio">Deudas<div class="rule"></div></h2>
+      <div class="card" id="cardDeudasInicio">
         <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px; gap:8px;">
           <span style="font-weight:700; font-size:13.5px;">Tus deudas</span>
           <span id="deudasResumen" style="font-family:var(--font-mono); font-size:11.5px; color:var(--ink-soft);">Sin deudas</span>
@@ -965,7 +965,7 @@
         <div id="gastosFijosList" style="display:none; margin-top:10px;"></div>
       </div>
 
-      <div class="card" style="margin-top:12px; background:linear-gradient(135deg,#FBE8D3,#F5D9BE); border:1px solid #E9C9A3;">
+      <div class="card" id="cardPagoDeudas" style="margin-top:12px; background:linear-gradient(135deg,#FBE8D3,#F5D9BE); border:1px solid #E9C9A3;">
         <div class="grupo-ing-head" id="pagoDeudasHead" onclick="toggleVerPagoDeudas()" style="cursor:pointer;">
           <div>
             <div class="s-txt" style="color:#7A4A18;">💳 Registrar pago de deudas</div>
@@ -2143,7 +2143,11 @@ function normalizarGasto(g, i){
   // Si un gasto viejo no tiene id, se le da uno que sale SIEMPRE igual para los
   // mismos datos (no uno al azar): así este celular y la nube lo reconocen como
   // el mismo gasto al compararlos, en vez de verlo como dos distintos.
-  const id = g.id || ("g_" + ccHashTexto([fecha, mes, anio, g.rubro, g.monto, g.nota, i].join("|")).replace(":", "_"));
+  // (Solo al cargar datos guardados —hidratar pasa la posición "i"—; un gasto
+  // nuevo sin id, por ejemplo importado, siempre recibe uno único.)
+  const id = g.id || (typeof i === "number"
+    ? "g_" + ccHashTexto([fecha, mes, anio, g.rubro, g.monto, g.nota, i].join("|")).replace(":", "_")
+    : uid());
   return Object.assign({}, g, { id, fecha, mes, anio, rubro: g.rubro||"Extras", monto: Number(g.monto)||0, nota: g.nota||"" });
 }
 
@@ -2243,29 +2247,108 @@ function ccCompararEstados(local, nube){
   r.total = r.soloCelular.length + r.soloNube.length + r.cambiados.length;
   return r;
 }
-/* "Unir todo": parte de lo que hay en la nube, le suma lo que solo está en
-   este celular y, en lo que cambió en los dos lados, usa lo que se eligió
-   ("celular" si no se eligió nada). elecciones = { "tipo|clave": "celular"|"nube" } */
-function ccUnirEstados(local, nube, diff, elecciones){
+/* "Unir" sin memoria (no hay base): parte de lo que hay en la nube; de lo que
+   solo está en este celular se suma lo que se marcó para conservar; de lo que
+   solo está en la nube se quita lo que se desmarcó; y en lo que cambió en los
+   dos lados se usa lo que se eligió.
+   eleccion = { elecciones: { "tipo|clave": "celular"|"nube" },
+                conservarCelular: { "tipo|clave": bool }, conservarNube: {...} } */
+function ccUnirEstados(local, nube, diff, eleccion){
   const copia = v=> JSON.parse(JSON.stringify(v));
+  const e = eleccion || {};
   const r = copia(nube);
   r.mesActivo = local.mesActivo; r.anioActivo = local.anioActivo;
   ["gastos","deudas","metas","ingresosOcasionales","inversiones","rubros"].forEach(k=>{ if(!Array.isArray(r[k])) r[k] = []; });
   r.fondoEmergencia = r.fondoEmergencia || {};
   if(!Array.isArray(r.fondoEmergencia.historial)) r.fondoEmergencia.historial = [];
   const lista = tipo=> CC_GRUPOS_SYNC.find(g=> g.tipo === tipo).lista(r);
-  diff.soloCelular.forEach(d=>{ lista(d.tipo).push(copia(d.item)); });
-  diff.cambiados.forEach(d=>{
-    const eleccion = (elecciones && elecciones[d.tipo + "|" + d.clave]) || "celular";
-    if(eleccion !== "celular") return;
-    if(d.tipo === "ingreso"){ r.ingresoPrincipal = copia(d.celular.ingresoPrincipal); r.ingresoPrincipalPorMes = copia(d.celular.ingresoPrincipalPorMes); return; }
-    if(d.tipo === "fondo"){ Object.assign(r.fondoEmergencia, copia(d.celular)); return; }
+  const clave = d=> d.tipo + "|" + d.clave;
+  diff.soloCelular.forEach(d=>{
+    if(e.conservarCelular && e.conservarCelular[clave(d)] === false) return;
+    lista(d.tipo).push(copia(d.item));
+  });
+  diff.soloNube.forEach(d=>{
+    if(!(e.conservarNube && e.conservarNube[clave(d)] === false)) return;
     const g = CC_GRUPOS_SYNC.find(g=> g.tipo === d.tipo);
     const arr = lista(d.tipo);
     const i = arr.findIndex(x=> String(x[g.clave]) === d.clave);
-    if(i >= 0) arr[i] = copia(d.celular);
+    if(i >= 0) arr.splice(i, 1);
+  });
+  ccAplicarElecciones(r, diff.cambiados, Object.assign({}, e.elecciones), "celular");
+  return r;
+}
+
+/* Aplica sobre "r" la versión de este celular en los datos donde se eligió
+   "celular" (en los demás queda la de la nube). Un dato en null significa que
+   ese lado lo borró. porDefecto: qué usar si no se eligió nada. */
+function ccAplicarElecciones(r, cambiados, elecciones, porDefecto){
+  const copia = v=> JSON.parse(JSON.stringify(v));
+  (cambiados || []).forEach(d=>{
+    const elegido = (elecciones && elecciones[d.tipo + "|" + d.clave]) || porDefecto || "nube";
+    if(elegido !== "celular") return;
+    if(d.tipo === "ingreso"){ if(d.celular){ r.ingresoPrincipal = copia(d.celular.ingresoPrincipal); r.ingresoPrincipalPorMes = copia(d.celular.ingresoPrincipalPorMes); } return; }
+    if(d.tipo === "fondo"){ if(d.celular){ r.fondoEmergencia = r.fondoEmergencia || {}; Object.assign(r.fondoEmergencia, copia(d.celular)); } return; }
+    const g = CC_GRUPOS_SYNC.find(g=> g.tipo === d.tipo);
+    const arr = g.lista(r);
+    const i = arr.findIndex(x=> String(x[g.clave]) === d.clave);
+    if(d.celular == null){ if(i >= 0) arr.splice(i, 1); }
+    else if(i >= 0) arr[i] = copia(d.celular);
+    else arr.push(copia(d.celular));
   });
   return r;
+}
+
+/* "Unir" CON memoria: base = cómo estaban los datos la última vez que este
+   celular y la nube quedaron iguales. Para cada dato:
+   - si solo cambió un lado (se agregó, editó o borró), se toma ese lado;
+   - si los dos lo cambiaron distinto, queda como "conflicto" (por ahora con
+     la versión de la nube) para que la persona elija.
+   Devuelve { estado, conflictos:[{ tipo, clave, celular, nube }] } (un lado en
+   null = ese lado lo borró). */
+function ccUnir3(base, local, nube){
+  const copia = v=> JSON.parse(JSON.stringify(v));
+  const igual = (a, b)=> ccJSONEstable(a) === ccJSONEstable(b);
+  const r = copia(nube);
+  r.mesActivo = local.mesActivo; r.anioActivo = local.anioActivo;
+  r.fondoEmergencia = r.fondoEmergencia || {};
+  const conflictos = [];
+  CC_GRUPOS_SYNC.forEach(g=>{
+    const mapa = arr=> new Map((arr || []).map(x=> [String(x[g.clave]), x]));
+    const B = mapa(g.lista(base)), L = mapa(g.lista(local)), C = mapa(g.lista(nube));
+    const salida = [];
+    const claves = [...C.keys(), ...[...L.keys()].filter(k=> !C.has(k))];
+    claves.forEach(k=>{
+      const b = B.get(k), l = L.get(k), c = C.get(k);
+      let v;
+      if(l && c){
+        if(igual(l, c) || (b && igual(l, b))) v = c;           // igual, o solo cambió la nube
+        else if(b && igual(c, b)) v = l;                       // solo cambió este celular
+        else { conflictos.push({ tipo:g.tipo, clave:k, celular:l, nube:c }); v = c; }
+      } else if(l){
+        if(!b) v = l;                                          // lo agregó este celular
+        else if(igual(l, b)) v = undefined;                    // lo borraron en la nube
+        else { conflictos.push({ tipo:g.tipo, clave:k, celular:l, nube:null }); v = undefined; }
+      } else {
+        if(!b) v = c;                                          // lo agregaron en la nube
+        else if(igual(c, b)) v = undefined;                    // lo borró este celular
+        else { conflictos.push({ tipo:g.tipo, clave:k, celular:null, nube:c }); v = c; }
+      }
+      if(v !== undefined) salida.push(copia(v));
+    });
+    if(g.tipo === "historialFE") r.fondoEmergencia.historial = salida;
+    else r[g.tipo] = salida;
+  });
+  [["ingreso", ccDatosIngreso], ["fondo", ccConfigFondo]].forEach(([tipo, leer])=>{
+    const b = leer(base), l = leer(local), c = leer(nube);
+    if(igual(l, c) || igual(l, b)) return;                     // queda lo de la nube
+    if(igual(c, b)){                                           // solo cambió este celular
+      if(tipo === "ingreso"){ r.ingresoPrincipal = copia(l.ingresoPrincipal); r.ingresoPrincipalPorMes = copia(l.ingresoPrincipalPorMes); }
+      else Object.assign(r.fondoEmergencia, copia(l));
+      return;
+    }
+    conflictos.push({ tipo, clave:tipo, celular:l, nube:c });
+  });
+  return { estado: r, conflictos };
 }
 
 let state = loadState();
@@ -2484,6 +2567,14 @@ function toast(msg){
 // (window.ccPuedeEditar), ausente/true = puede editar (dueño único del
 // hogar, o antes de que cargue la sincronización). Se llama al inicio de
 // cada función que agrega/edita/elimina/paga algo compartido del hogar.
+// Permiso de ver deudas (lo activa el script de sincronización; ausente = sí)
+function ccVerDeudasPermitido(){ return window.ccPuedeVerDeudas !== false; }
+// Sin permiso de ver deudas, un pago de deuda se muestra solo como "Pago de deuda"
+// (sigue contando como gasto del hogar, pero sin decir de qué deuda es).
+function ccNombreRubroVisible(nombre){
+  return (!ccVerDeudasPermitido() && /^Pago de deuda: /.test(String(nombre||""))) ? "Pago de deuda" : nombre;
+}
+
 function ccPuedeEditarCheck(){
   if(window.ccPuedeEditar === false){
     toast("Tu cuenta no tiene permiso para editar — pídele al administrador que te lo active");
@@ -2891,7 +2982,7 @@ async function ccGenerarPDFResumen(){
   }
 
   y += 20;
-  const deudasActivas = state.deudas.filter(d=>d.saldo>0);
+  const deudasActivas = ccVerDeudasPermitido() ? state.deudas.filter(d=>d.saldo>0) : [];
   if(deudasActivas.length){
     if(y > 700){ doc.addPage(); y = 50; }
     doc.setFont("helvetica","bold"); doc.setFontSize(13);
@@ -3269,7 +3360,7 @@ function renderTortaChart(cont, key){
     const icono = nombre==="Otros" ? "🔹" : ccIconoPorNombreRubro(nombre);
     const fila = `<div class="torta-legend-row${pick===i?" activo":""}" onclick="tortaTap('${key}',${i})">
       <span style="width:10px; height:10px; border-radius:3px; background:${CC_COLORES_TORTA[i%CC_COLORES_TORTA.length]}; flex-shrink:0;"></span>
-      <span class="tl-nombre">${icono} ${esc(nombre)}</span>
+      <span class="tl-nombre">${icono} ${esc(ccNombreRubroVisible(nombre))}</span>
       <span class="tl-valor">${money(valor)}</span>
       <b>${pctVal}%</b>
     </div>`;
@@ -3279,7 +3370,7 @@ function renderTortaChart(cont, key){
         const ic = ccIconoPorNombreRubro(n);
         const p = Math.round(v/total*100);
         return `<div class="torta-otros-fila">
-          <span class="tl-nombre">${ic} ${esc(n)}</span>
+          <span class="tl-nombre">${ic} ${esc(ccNombreRubroVisible(n))}</span>
           <span class="tl-valor">${money(v)}</span>
           <b>${p}%</b>
         </div>`;
@@ -3413,7 +3504,7 @@ function renderOrdenPagos(){
     const monto = montoRubro(r);
     if(monto>0) items.push({ tipo:"rubro", nombre:r.nombre, dia:r.diaPago||0, monto, icono:"📌" });
   });
-  state.deudas.filter(d=>d.saldo>0).forEach(d=>{
+  (ccVerDeudasPermitido() ? state.deudas : []).filter(d=>d.saldo>0).forEach(d=>{
     items.push({ tipo:"deuda", nombre:d.nombre, dia:d.diaPago||0, monto:d.pago||0, icono:"💳", id:d.id });
   });
   if(items.length===0){
@@ -4974,7 +5065,7 @@ function pintarGasto(g){
   return `
       <div class="receipt">
         <div class="r-main" onclick="openGastoEdit('${g.id}')" style="cursor:pointer;">
-          <div class="r-rubro">${ccIconoPorNombreRubro(g.rubro)} ${esc(g.rubro)}</div>
+          <div class="r-rubro">${ccIconoPorNombreRubro(g.rubro)} ${esc(ccNombreRubroVisible(g.rubro))}</div>
           <div class="r-meta">${esc(g.fecha)} · ${g.mes} ${g.anio}${g.nota ? " · "+esc(g.nota) : ""}</div>
         </div>
         <div class="r-amount" onclick="openGastoEdit('${g.id}')" style="cursor:pointer;">${money(g.monto)}</div>
@@ -5142,6 +5233,7 @@ function importGastosCSV(evt){
       const monto = parseFloat((iMonto>=0 ? c[iMonto] : "0").replace(/[^0-9.\-]/g,""))||0;
       if(!fecha && monto<=0) return;
       state.gastos.push(normalizarGasto({
+        id: uid(),   // cada fila importada es un gasto distinto, aunque dos filas sean iguales
         fecha,
         mes:   iMes>=0 ? (c[iMes]||"").trim() : "",
         anio:  iAnio>=0 ? parseInt(c[iAnio]) : null,
@@ -5160,6 +5252,10 @@ function importGastosCSV(evt){
 }
 
 async function exportBackupJSON(){
+  if(window.ccPuedeVerDeudas === false || window.ccPuedeVerIngresos === false){
+    toast("Tu cuenta no tiene permiso para descargar el respaldo completo del hogar — pídeselo al administrador.");
+    return;
+  }
   const hoy = fechaLocalHoy(); // 2026-08-27
   await downloadFile("cuentas_claras_respaldo_"+hoy+".json", JSON.stringify(state, null, 2), "application/json");
   marcarRespaldoHecho();
@@ -5581,7 +5677,7 @@ async function exportXLSX(){
 
     // 5. Deudas
     const filasDeudas = [["Nombre","Deuda inicial","Saldo actual","Pago mensual","% pagado","Meses restantes"]];
-    state.deudas.forEach(d=>{
+    (ccVerDeudasPermitido() ? state.deudas : []).forEach(d=>{
       const pagado = d.inicial>0 ? Math.round((1-d.saldo/d.inicial)*1000)/10 : 0;
       filasDeudas.push([d.nombre, Math.round(d.inicial), Math.round(d.saldo), Math.round(d.pago), pagado,
         d.pago>0 ? Math.ceil(d.saldo/d.pago) : ""]);
@@ -8342,7 +8438,7 @@ function toggleVerAlarmasDeuda(){
 function renderAlarmasDeuda(){
   const sub = document.getElementById("alarmasDeudaSub");
   const box = document.getElementById("alarmasDeudaList");
-  const deudasR = (state.deudas||[]).filter(d=>d.diaPago>0 && d.saldo>0);
+  const deudasR = (ccVerDeudasPermitido() ? (state.deudas||[]) : []).filter(d=>d.diaPago>0 && d.saldo>0);
   const rubrosR = (state.rubros||[]).filter(r=>r.diaPago>0);
   const total = deudasR.length + rubrosR.length;
   if(sub) sub.textContent = total ? total+" recordatorio(s) activo(s)" : "No hay recordatorios de pago";
@@ -9394,19 +9490,40 @@ if(typeof supabase !== "undefined"){
     return { hogarId: nuevoHogarId, rol: "admin", advertencia: ccAdvertenciaInvitacion, nuevo: true };
   }
 
-  /* ---- Traer (sin aplicar todavía) lo que ya hay guardado en la nube ---- */
+  /* =====================================================================
+     MOTOR DE SINCRONIZACIÓN
+     - Guardado "con candado": la nube solo acepta un guardado si nadie la
+       cambió desde la versión sobre la que este celular hizo sus cambios
+       (ccBaseNube). Si alguien sí la cambió, se trae lo nuevo, se une y se
+       vuelve a guardar. Nunca se reemplaza la nube a ciegas.
+     - Unión "con memoria": se guarda cómo estaban los datos la última vez que
+       este celular y la nube quedaron iguales (la BASE). Comparando base,
+       celular y nube se sabe quién cambió qué: lo que cambió un solo lado se
+       toma de ese lado sin preguntar (agregados, ediciones y borrados); solo
+       si los DOS cambiaron el mismo dato se pregunta cuál dejar.
+     - El mes que se está mirando, las alarmas y el conteo de rubros usados son
+       de cada celular: nunca se toman de la nube.
+     ===================================================================== */
+
+  /* ---- Traer (sin aplicar todavía) lo que ya hay guardado en la nube ----
+     Devuelve { datos, actualizado_en }, null si el hogar todavía no tiene
+     nada guardado, o { error } si NO se pudo leer (sin conexión, error del
+     servidor). Un error nunca se confunde con "no hay nada". ---- */
   async function ccObtenerEstadoNube(){
-    const { data, error } = await sbFamiliar.from("estado_app")
-      .select("datos, actualizado_en").eq("hogar_id", ccHogarId).maybeSingle();
-    if(error) console.error("ccObtenerEstadoNube:", error);
-    if(error || !data || !data.datos || Object.keys(data.datos).length===0) return null;
-    return data;
+    try{
+      const { data, error } = await sbFamiliar.from("estado_app")
+        .select("datos, actualizado_en").eq("hogar_id", ccHogarId).maybeSingle();
+      if(error){ console.error("ccObtenerEstadoNube:", error); return { error }; }
+      if(!data || !data.datos || Object.keys(data.datos).length===0) return null;
+      return data;
+    }catch(e){
+      console.error("ccObtenerEstadoNube:", e);
+      return { error: e };
+    }
   }
-  /* ---- Cuál es el dato más reciente que ya conocemos con certeza (de lo
-     último que subimos nosotros o de lo último que trajimos de la nube).
-     Sirve para descartar respuestas atrasadas: si una consulta lenta pedida
-     ANTES de un cambio reciente llega DESPUÉS, no debe pisarlo con datos
-     viejos solo porque llegó tarde. ---- */
+
+  /* ---- Cuál es el dato más reciente que ya conocemos con certeza (para
+     descartar respuestas atrasadas que lleguen tarde). ---- */
   let ccUltimaActualizadaEnConocida = null;
   function ccRegistrarActualizacionConocida(fechaISO){
     if(fechaISO && (!ccUltimaActualizadaEnConocida || new Date(fechaISO).getTime() > new Date(ccUltimaActualizadaEnConocida).getTime())){
@@ -9417,16 +9534,68 @@ if(typeof supabase !== "undefined"){
     if(!ccUltimaActualizadaEnConocida || !fechaISO) return false;
     return new Date(fechaISO).getTime() <= new Date(ccUltimaActualizadaEnConocida).getTime();
   }
+  function ccMismaFecha(a, b){
+    if(!a && !b) return true;
+    if(!a || !b) return false;
+    return new Date(a).getTime() === new Date(b).getTime();
+  }
+
+  // Versión de la nube sobre la que este celular hizo sus cambios (candado).
+  let ccBaseNube = null;
+
+  /* ---- Marca y BASE de sincronización (guardadas en el celular) ----
+     cc_sync_<hogar>      = { hash de los datos del celular, fecha de la nube }
+     cc_sync_base_<hogar> = los datos tal como estaban en la nube la última vez
+                            que celular y nube quedaron iguales. ---- */
+  function ccClaveSync(){ return "cc_sync_" + ccHogarId; }
+  function ccClaveBase(){ return "cc_sync_base_" + ccHogarId; }
+  function ccGuardarMarca(hash, fechaISO, baseJSON){
+    try{
+      localStorage.setItem(ccClaveSync(), JSON.stringify({ hash: hash, fecha: fechaISO || null }));
+      if(baseJSON != null) localStorage.setItem(ccClaveBase(), baseJSON);
+    }catch(e){}
+  }
+  // Celular y nube quedaron iguales: la base es lo que hay en la nube.
+  function ccMarcarSincronizado(fechaISO, baseJSON){
+    let raw = "";
+    try{ raw = localStorage.getItem(STORAGE_KEY) || ""; }catch(e){}
+    ccGuardarMarca(ccHashTexto(raw), fechaISO, baseJSON);
+  }
+  function ccLeerSincronizado(){
+    try{ return JSON.parse(localStorage.getItem(ccClaveSync()) || "null"); }catch(e){ return null; }
+  }
+  function ccLeerBase(){
+    try{ return localStorage.getItem(ccClaveBase()); }catch(e){ return null; }
+  }
+  function ccLocalSinCambiosDesdeSync(){
+    const sync = ccLeerSincronizado();
+    if(!sync || !sync.hash) return false;
+    let raw = "";
+    try{ raw = localStorage.getItem(STORAGE_KEY) || ""; }catch(e){ return false; }
+    return ccHashTexto(raw) === sync.hash;
+  }
+
+  /* ---- Lo que es de cada celular (no se toma de la nube) ---- */
+  function ccConCamposDelCelular(datos, desde){
+    const d = JSON.parse(JSON.stringify(datos));
+    d.mesActivo = desde.mesActivo;
+    d.anioActivo = desde.anioActivo;
+    d.alarmas = JSON.parse(JSON.stringify(desde.alarmas || []));
+    d.usoRubros = JSON.parse(JSON.stringify(desde.usoRubros || {}));
+    return d;
+  }
+
+  /* ---- Traer lo de la nube tal cual (este celular no tenía cambios propios) ---- */
   function ccAplicarEstadoNube(nube){
     ccUltimoEstadoSubidoJSON = JSON.stringify(nube.datos);
     ccRegistrarActualizacionConocida(nube.actualizado_en);
-    state = hidratar(nube.datos, defaultState());
+    ccBaseNube = nube.actualizado_en;
+    state = hidratar(ccConCamposDelCelular(nube.datos, state), defaultState());
     // Se guarda SOLO en el celular (sin volver a subir lo que acaba de llegar).
     // En la primera conexión la sincronización todavía no está activa y
-    // ccSaveStateOriginal es null: antes eso lanzaba un error silencioso y un
-    // invitado con el celular recién instalado nunca recibía los datos.
+    // ccSaveStateOriginal es null: por eso se usa saveState normal en ese caso.
     (ccSaveStateOriginal || window.saveState)();
-    ccMarcarSincronizado(nube.actualizado_en);
+    ccMarcarSincronizado(nube.actualizado_en, JSON.stringify(nube.datos));
     renderAll();
   }
 
@@ -9440,38 +9609,6 @@ if(typeof supabase !== "undefined"){
       (state.ingresosOcasionales && state.ingresosOcasionales.length) ||
       (state.ingresoPrincipal && state.ingresoPrincipal.monto > 0 && !state.ingresoPrincipal.esEjemplo)
     );
-  }
-
-
-  /* ---- Marca de "celular y nube quedaron iguales" ----
-     Cada vez que se confirma que este celular y la nube tienen lo mismo
-     (se subió un cambio, o se trajo lo de la nube) se guarda una huella de
-     los datos del celular y la fecha de la nube en ese momento. Al volver a
-     conectar se sabe así, sin adivinar, cuál de los dos cambió desde entonces:
-     - solo la nube (otro celular del hogar) → se trae sin preguntar;
-     - solo el celular (cambios que no alcanzaron a subir) → se suben;
-     - los dos → se comparan dato por dato y se pregunta. ---- */
-  function ccClaveSync(){ return "cc_sync_" + ccHogarId; }
-  function ccMarcarSincronizado(fechaISO){
-    try{
-      const raw = localStorage.getItem(STORAGE_KEY) || "";
-      localStorage.setItem(ccClaveSync(), JSON.stringify({ hash: ccHashTexto(raw), fecha: fechaISO || null }));
-    }catch(e){}
-  }
-  function ccLeerSincronizado(){
-    try{ return JSON.parse(localStorage.getItem(ccClaveSync()) || "null"); }catch(e){ return null; }
-  }
-  function ccLocalSinCambiosDesdeSync(){
-    const sync = ccLeerSincronizado();
-    if(!sync || !sync.hash) return false;
-    let raw = "";
-    try{ raw = localStorage.getItem(STORAGE_KEY) || ""; }catch(e){ return false; }
-    return ccHashTexto(raw) === sync.hash;
-  }
-  function ccNubeSinCambiosDesdeSync(nube){
-    const sync = ccLeerSincronizado();
-    return !!(sync && sync.fecha && nube && nube.actualizado_en &&
-      new Date(nube.actualizado_en).getTime() === new Date(sync.fecha).getTime());
   }
 
   /* ---- Copia de lo que había en este celular antes de unir/reemplazar ---- */
@@ -9500,165 +9637,308 @@ if(typeof supabase !== "undefined"){
     await downloadFile("cuentas_claras_copia_antes_de_sincronizar_" + String(copia.fecha).slice(0,10) + ".json", JSON.stringify(copia.datos, null, 2), "application/json");
   };
 
-  /* ---- Ventana "este celular y la nube no coinciden" ---- */
-  function ccPreguntarDiferencias(diff){
+  /* ---- Ventana de diferencias ----
+     conBase = false (no hay memoria de la última sincronización, por ejemplo
+       al venir de una versión anterior o al entrar por primera vez con datos
+       propios): se muestra todo lo distinto; lo que solo está en un lado trae
+       una casilla para decidir si se conserva, y en lo cambiado en los dos
+       lados hay que elegir cuál dejar (no viene nada marcado).
+     conBase = true: solo se muestra lo que cambiaron LOS DOS lados (lo demás
+       ya se unió solo) y se elige cuál dejar en cada uno. ---- */
+  function ccPreguntarDiferencias(diff, opciones){
+    const conBase = !!(opciones && opciones.conBase);
     return new Promise(resolve=>{
-      const lista = (arr, icono)=> arr.length
-        ? arr.map(d=> '<div style="padding:6px 0; border-bottom:1px solid var(--line-soft); font-size:13px;">' + icono + " " + esc(ccEtiquetaItemSync(d.tipo, d.item)) + "</div>").join("")
-        : '<div class="hint" style="margin:4px 0 0;">Nada</div>';
+      const lineaSolo = (d, i, lado)=> '<label style="text-transform:none; letter-spacing:normal; font-weight:500; color:var(--ink); margin:0; display:flex; gap:8px; align-items:flex-start; padding:6px 0; border-bottom:1px solid var(--line-soft); font-size:13px; cursor:pointer;">'
+        + '<input type="checkbox" data-lado="' + lado + '" data-i="' + i + '" checked style="width:auto; margin-top:2px;">'
+        + '<span>' + esc(ccEtiquetaItemSync(d.tipo, d.item)) + '</span></label>';
+      const lista = (arr, lado)=> arr.length ? arr.map((d, i)=> lineaSolo(d, i, lado)).join("") : '<div class="hint" style="margin:4px 0 0;">Nada</div>';
+      const texto = (tipo, item, lado)=> item == null
+        ? (lado === "celular" ? "(lo borraste en este celular)" : "(lo borraron desde otro celular)")
+        : ccEtiquetaItemSync(tipo, item);
       const cambiados = diff.cambiados.length
         ? diff.cambiados.map((d, i)=>{
-            let a = ccEtiquetaItemSync(d.tipo, d.celular), b = ccEtiquetaItemSync(d.tipo, d.nube);
+            let a = texto(d.tipo, d.celular, "celular"), b = texto(d.tipo, d.nube, "nube");
             if(a === b){ a += " (otros detalles distintos)"; }
             return '<div style="padding:8px 0; border-bottom:1px solid var(--line-soft); font-size:13px;">'
-              + '<label style="display:flex; gap:8px; align-items:flex-start; margin-bottom:6px; cursor:pointer;"><input type="radio" name="ccDif' + i + '" value="celular" checked style="width:auto; margin-top:2px;"><span>📱 <b>Este celular:</b> ' + esc(a) + '</span></label>'
-              + '<label style="display:flex; gap:8px; align-items:flex-start; cursor:pointer;"><input type="radio" name="ccDif' + i + '" value="nube" style="width:auto; margin-top:2px;"><span>☁️ <b>Nube:</b> ' + esc(b) + '</span></label>'
+              + '<label style="text-transform:none; letter-spacing:normal; font-weight:500; color:var(--ink); margin:0; display:flex; gap:8px; align-items:flex-start; margin-bottom:6px; cursor:pointer;"><input type="radio" name="ccDif' + i + '" value="celular" style="width:auto; margin-top:2px;"><span>📱 <b>Este celular:</b> ' + esc(a) + '</span></label>'
+              + '<label style="text-transform:none; letter-spacing:normal; font-weight:500; color:var(--ink); margin:0; display:flex; gap:8px; align-items:flex-start; cursor:pointer;"><input type="radio" name="ccDif' + i + '" value="nube" style="width:auto; margin-top:2px;"><span>☁️ <b>' + (conBase ? "El otro celular" : "Nube") + ':</b> ' + esc(b) + '</span></label>'
               + '</div>';
           }).join("")
         : '<div class="hint" style="margin:4px 0 0;">Nada</div>';
       const titulo = (t)=> '<div style="font-weight:800; font-size:14px; margin:14px 0 4px;">' + t + '</div>';
+      const btn = (id, txt, principal)=> '<button id="' + id + '" style="width:100%; margin-top:' + (principal ? "16px" : "8px") + '; background:' + (principal ? "var(--brand-dark)" : "var(--surface-2)") + '; color:' + (principal ? "#fff" : "var(--ink)") + '; border:none; border-radius:12px; padding:13px; font-weight:' + (principal ? 800 : 700) + '; cursor:pointer;">' + txt + '</button>';
       const ov = document.createElement("div");
       ov.id = "ccModalDiferencias";
       ov.style.cssText = "position:fixed; inset:0; z-index:9998; background:rgba(0,0,0,.55); display:flex; align-items:center; justify-content:center; padding:16px;";
       ov.innerHTML = '<div style="background:var(--surface); color:var(--ink); border-radius:20px; padding:20px; max-width:420px; width:100%; max-height:calc(100vh - 32px); overflow-y:auto; box-shadow:0 20px 50px rgba(0,0,0,.3);">'
         + '<div style="font-size:30px; text-align:center;">☁️</div>'
-        + '<div style="font-size:16px; font-weight:800; text-align:center; margin:4px 0 6px;">Este celular y la nube no coinciden</div>'
-        + '<div class="hint" style="text-align:center; margin:0;">Revisa qué tiene cada uno. Antes de cualquier cambio se guarda una copia de lo de este celular.</div>'
-        + titulo("📱 Solo en este celular (" + diff.soloCelular.length + ")") + lista(diff.soloCelular, "•")
-        + titulo("☁️ Solo en la nube (" + diff.soloNube.length + ")") + lista(diff.soloNube, "•")
-        + titulo("✏️ Cambiado en los dos lados (" + diff.cambiados.length + ")")
-        + (diff.cambiados.length ? '<div class="hint" style="margin:0 0 4px;">Elige cuál es el correcto en cada uno. Si registraste pagos en este celular, deja la deuda de "este celular".</div>' : "")
-        + cambiados
-        + '<button id="ccDifUnir" style="width:100%; margin-top:16px; background:var(--brand-dark); color:#fff; border:none; border-radius:12px; padding:13px; font-weight:800; cursor:pointer;">Unir todo (recomendado)</button>'
-        + '<div class="hint" style="text-align:center; margin:6px 0 10px;">Deja todo lo de la nube y le suma lo que solo está en este celular.</div>'
-        + '<button id="ccDifNube" style="width:100%; background:var(--surface-2); color:var(--ink); border:none; border-radius:12px; padding:12px; font-weight:700; cursor:pointer; margin-bottom:8px;">Dejar solo lo de la nube</button>'
-        + '<button id="ccDifCelular" style="width:100%; background:var(--surface-2); color:var(--ink); border:none; border-radius:12px; padding:12px; font-weight:700; cursor:pointer;">Dejar solo lo de este celular</button>'
+        + (conBase
+            ? '<div style="font-size:16px; font-weight:800; text-align:center; margin:4px 0 6px;">Este celular y otro cambiaron lo mismo</div>'
+              + '<div class="hint" style="text-align:center; margin:0;">Todo lo demás ya se unió solo. En cada dato de abajo, elige cuál es el correcto.</div>'
+              + titulo("✏️ Cambiado en los dos lados (" + diff.cambiados.length + ")") + cambiados
+              + btn("ccDifGuardar", "Guardar mi elección", true)
+            : '<div style="font-size:16px; font-weight:800; text-align:center; margin:4px 0 6px;">Este celular y la nube no coinciden</div>'
+              + '<div class="hint" style="text-align:center; margin:0;">Revisa qué tiene cada uno. Antes de cualquier cambio se guarda una copia de lo de este celular.</div>'
+              + titulo("📱 Solo en este celular (" + diff.soloCelular.length + ")")
+              + (diff.soloCelular.length ? '<div class="hint" style="margin:0 0 4px;">Desmarca lo que NO quieras conservar (por ejemplo, algo que ya borraste en otro celular).</div>' : "")
+              + lista(diff.soloCelular, "celular")
+              + titulo("☁️ Solo en la nube (" + diff.soloNube.length + ")")
+              + (diff.soloNube.length ? '<div class="hint" style="margin:0 0 4px;">Desmarca lo que NO quieras conservar (por ejemplo, algo que ya borraste en este celular).</div>' : "")
+              + lista(diff.soloNube, "nube")
+              + titulo("✏️ Cambiado en los dos lados (" + diff.cambiados.length + ")")
+              + (diff.cambiados.length ? '<div class="hint" style="margin:0 0 4px;">Elige cuál es el correcto en cada uno.</div>' : "")
+              + cambiados
+              + btn("ccDifUnir", "Unir con lo que marqué (recomendado)", true)
+              + btn("ccDifNube", "Dejar solo lo de la nube", false)
+              + btn("ccDifCelular", "Dejar solo lo de este celular", false))
         + '</div>';
       document.body.appendChild(ov);
       const cerrar = (valor)=>{ ov.remove(); resolve(valor); };
+      const leerElecciones = ()=>{
+        const elecciones = {};
+        let faltan = 0;
+        diff.cambiados.forEach((d, i)=>{
+          const marcado = ov.querySelector('input[name="ccDif' + i + '"]:checked');
+          if(marcado) elecciones[d.tipo + "|" + d.clave] = marcado.value; else faltan++;
+        });
+        return { elecciones, faltan };
+      };
+      const leerCasillas = (lado, arr)=>{
+        const conservar = {};
+        arr.forEach((d, i)=>{
+          const c = ov.querySelector('input[data-lado="' + lado + '"][data-i="' + i + '"]');
+          conservar[d.tipo + "|" + d.clave] = !c || c.checked;
+        });
+        return conservar;
+      };
       const confirmarDescarte = async (mensaje)=>{
         ov.style.display = "none";
         const ok = await ccConfirmAsync(mensaje);
         ov.style.display = "flex";
         return ok;
       };
-      ov.querySelector("#ccDifUnir").onclick = ()=>{
-        const elecciones = {};
-        diff.cambiados.forEach((d, i)=>{
-          const marcado = ov.querySelector('input[name="ccDif' + i + '"]:checked');
-          elecciones[d.tipo + "|" + d.clave] = marcado ? marcado.value : "celular";
-        });
-        cerrar({ modo:"unir", elecciones });
+      const botonUnir = ov.querySelector(conBase ? "#ccDifGuardar" : "#ccDifUnir");
+      botonUnir.onclick = ()=>{
+        const { elecciones, faltan } = leerElecciones();
+        if(faltan){ toast("Elige cuál dejar en " + (faltan === 1 ? "el dato cambiado" : "los " + faltan + " datos cambiados")); return; }
+        cerrar({ modo:"unir", elecciones,
+                 conservarCelular: leerCasillas("celular", diff.soloCelular),
+                 conservarNube: leerCasillas("nube", diff.soloNube) });
       };
-      ov.querySelector("#ccDifNube").onclick = async ()=>{
-        const n = diff.soloCelular.length + diff.cambiados.length;
-        if(n && !(await confirmarDescarte("Se descartarán " + n + " cambio(s) que solo tiene este celular (queda una copia que puedes descargar desde Ajustes). ¿Continuar?"))) return;
-        cerrar({ modo:"nube" });
-      };
-      ov.querySelector("#ccDifCelular").onclick = async ()=>{
-        const n = diff.soloNube.length + diff.cambiados.length;
-        if(n && !(await confirmarDescarte("Se reemplazará la nube con lo de este celular: se perderán " + n + " cambio(s) que solo tiene la nube (por ejemplo, lo que se agregó desde otro celular). ¿Continuar?"))) return;
-        cerrar({ modo:"celular" });
-      };
+      if(!conBase){
+        ov.querySelector("#ccDifNube").onclick = async ()=>{
+          const n = diff.soloCelular.length + diff.cambiados.length;
+          if(n && !(await confirmarDescarte("Se descartarán " + n + " cambio(s) que solo tiene este celular (queda una copia que puedes descargar desde Ajustes). ¿Continuar?"))) return;
+          cerrar({ modo:"nube" });
+        };
+        ov.querySelector("#ccDifCelular").onclick = async ()=>{
+          const n = diff.soloNube.length + diff.cambiados.length;
+          if(n && !(await confirmarDescarte("Se reemplazará la nube con lo de este celular: se perderán " + n + " cambio(s) que solo tiene la nube (por ejemplo, lo que se agregó desde otro celular). ¿Continuar?"))) return;
+          cerrar({ modo:"celular" });
+        };
+      }
     });
   }
 
-  /* ---- Cuando los dos lados cambiaron (o no se sabe): comparar y decidir ---- */
-  async function ccReconciliarConNube(nube){
-    const localEstado = state;
-    const nubeEstado = hidratar(JSON.parse(JSON.stringify(nube.datos)), defaultState());
-    const diff = ccCompararEstados(localEstado, nubeEstado);
-    if(diff.total === 0){
-      // Tienen lo mismo: se toma la nube tal cual y queda la marca de sincronizado.
-      ccActivarSyncSaveState();
-      ccActivarRealtime();
-      ccAplicarEstadoNube(nube);
-      return;
-    }
-    ccGuardarCopiaAntesDeSincronizar();
-    // La sincronización (tiempo real, revisar al volver) se activa DESPUÉS de
-    // que se decida: si se activara antes, un cambio de otro celular que
-    // llegara mientras la ventana está abierta pisaría lo de este celular
-    // antes de poder unirlo.
-    const decision = await ccPreguntarDiferencias(diff);
-    ccActivarSyncSaveState();
-    ccActivarRealtime();
-    if(decision.modo === "nube"){
-      ccAplicarEstadoNube(nube);
-      ccMostrarBannerSync("☁️ Se dejaron los datos de la nube", "#0B7D5C", true);
-    } else if(decision.modo === "celular"){
+  /* ---- Unir lo de este celular con una versión de la nube ----
+     Deja el resultado en "state" (guardado solo en el celular) y la versión de
+     la nube como nueva base del candado. Devuelve { sinCambiosPropios: true }
+     si después de unir el celular quedó igual a la nube (no hay nada que subir). */
+  let ccUniendo = false;
+  async function ccUnirConNube(nube){
+    ccUniendo = true;
+    try{
+      const nubeEstado = hidratar(ccConCamposDelCelular(nube.datos, state), defaultState());
+      const baseJSON = ccLeerBase();
+      let resultado;
+      if(baseJSON){
+        const baseEstado = hidratar(ccConCamposDelCelular(JSON.parse(baseJSON), state), defaultState());
+        const u = ccUnir3(baseEstado, state, nubeEstado);
+        if(u.conflictos.length){
+          ccGuardarCopiaAntesDeSincronizar();
+          const d = await ccPreguntarDiferencias({ soloCelular:[], soloNube:[], cambiados:u.conflictos }, { conBase:true });
+          ccAplicarElecciones(u.estado, u.conflictos, d.elecciones);
+        }
+        resultado = u.estado;
+      } else {
+        const diff = ccCompararEstados(state, nubeEstado);
+        if(diff.total === 0){
+          resultado = nubeEstado;
+        } else {
+          ccGuardarCopiaAntesDeSincronizar();
+          const d = await ccPreguntarDiferencias(diff, { conBase:false });
+          if(d.modo === "nube") resultado = nubeEstado;
+          else if(d.modo === "celular") resultado = JSON.parse(JSON.stringify(state));
+          else resultado = ccUnirEstados(state, nubeEstado, diff, d);
+        }
+      }
+      state = hidratar(ccConCamposDelCelular(resultado, state), defaultState());
+      (ccSaveStateOriginal || window.saveState)();
+      ccBaseNube = nube.actualizado_en;
       ccRegistrarActualizacionConocida(nube.actualizado_en);
-      ccMostrarBannerSync("☁️ Subiendo los datos de este celular", "#0B7D5C", true);
-      await ccSubirANube();
-    } else {
-      state = hidratar(ccUnirEstados(localEstado, nubeEstado, diff, decision.elecciones), defaultState());
-      ccSaveStateOriginal();
+      const igualANube = ccCompararEstados(state, nubeEstado).total === 0;
+      if(igualANube){
+        ccUltimoEstadoSubidoJSON = JSON.stringify(nube.datos);
+        ccMarcarSincronizado(nube.actualizado_en, JSON.stringify(nube.datos));
+      } else {
+        // Quedan cambios propios por subir: la base pasa a ser esta versión de
+        // la nube, y el celular queda marcado como "con cambios".
+        ccGuardarMarca(null, nube.actualizado_en, JSON.stringify(nube.datos));
+        ccMarcarPendiente();
+      }
       renderAll();
-      ccRegistrarActualizacionConocida(nube.actualizado_en);
-      ccMostrarBannerSync("☁️ Listo: se unió lo de este celular con lo de la nube", "#0B7D5C", true);
-      await ccSubirANube();
+      return { sinCambiosPropios: igualANube };
+    } finally {
+      ccUniendo = false;
     }
+  }
+
+  /* ---- Guardar en la nube con candado ----
+     Devuelve { ok, fecha }, { conflicto, fecha } si la nube cambió desde
+     "base", o { error }. Usa la función guardar_estado_hogar del servidor; si
+     todavía no existe (falta ejecutar el SQL), hace el mismo candado desde el
+     celular: lee la fecha actual y solo guarda si coincide. */
+  function ccEsFuncionFaltante(err){
+    const t = String((err && err.message) || "") + " " + String((err && err.code) || "");
+    return /PGRST202|Could not find the function|function .* does not exist/i.test(t);
+  }
+  async function ccGuardarEnNube(datos, base){
+    const r = await sbFamiliar.rpc("guardar_estado_hogar", { p_hogar: ccHogarId, p_datos: datos, p_base: base || null });
+    if(!r.error){
+      const d = r.data || {};
+      return d.ok ? { ok:true, fecha: d.actualizado_en } : { conflicto:true, fecha: d.actualizado_en };
+    }
+    if(!ccEsFuncionFaltante(r.error)) return { error: r.error };
+    const actual = await sbFamiliar.from("estado_app").select("actualizado_en").eq("hogar_id", ccHogarId).maybeSingle();
+    if(actual.error) return { error: actual.error };
+    if(actual.data && !ccMismaFecha(actual.data.actualizado_en, base)) return { conflicto:true, fecha: actual.data.actualizado_en };
+    const u = await sbFamiliar.from("estado_app").upsert({ hogar_id: ccHogarId, datos }).select("actualizado_en").maybeSingle();
+    if(u.error) return { error: u.error };
+    return { ok:true, fecha: u.data ? u.data.actualizado_en : null };
   }
 
   /* ---- Subir a la nube cada vez que se guarda localmente ---- */
   let ccSubiendoAhora = false;
   let ccSubidaPendiente = false;
   let ccUltimoEstadoSubidoJSON = null;
-  /* Esta marca vive en localStorage (no solo en memoria) para que, si la
-     app se cierra justo antes de confirmar que un cambio llegó a subir
-     (mala conexión, se cerró muy rápido, etc.), lo sepamos incluso después
-     de reabrir — y no se pierda ese cambio al volver a conectar. */
+  /* Esta marca vive en localStorage (no solo en memoria) para que, si la app
+     se cierra justo antes de confirmar que un cambio llegó a subir (mala
+     conexión, se cerró muy rápido, etc.), lo sepamos incluso después de
+     reiniciar — y no se pierda ese cambio al reconectar. */
   function ccClavePendiente(){ return "cc_subida_pendiente_" + ccHogarId; }
   function ccMarcarPendiente(){ try{ localStorage.setItem(ccClavePendiente(), "1"); }catch(e){} }
   function ccQuitarMarcaPendiente(){ try{ localStorage.removeItem(ccClavePendiente()); }catch(e){} }
   function ccHaySubidaPendienteGuardada(){
     try{ return localStorage.getItem(ccClavePendiente()) === "1"; }catch(e){ return false; }
   }
+  function ccSincronizacionActiva(){ return !!(ccHogarId && ccSaveStateOriginal); }
+
+  /* Reintento automático: si una subida falla (mala señal), se vuelve a
+     intentar sola, cada vez con un poco más de espera (hasta 2 minutos), y
+     de inmediato cuando el celular recupera la conexión. */
+  let ccTimerReintento = null;
+  let ccEsperaReintento = 5000;
+  function ccProgramarReintento(){
+    if(ccTimerReintento || !ccSincronizacionActiva()) return;
+    ccTimerReintento = setTimeout(()=>{
+      ccTimerReintento = null;
+      if(ccSubidaPendiente || ccHaySubidaPendienteGuardada()) ccSubirANube();
+    }, ccEsperaReintento);
+    ccEsperaReintento = Math.min(ccEsperaReintento * 2, 120000);
+  }
+  window.addEventListener("online", ()=>{
+    if(!ccSincronizacionActiva()) return;
+    if(ccSubidaPendiente || ccHaySubidaPendienteGuardada()) ccSubirANube();
+    else ccRevisarNubeAlVolver();
+  });
+
+  // ¿Lo que tiene este celular es distinto de la base (hay algo que subir)?
+  function ccHayCambiosParaSubir(){
+    const baseJSON = ccLeerBase();
+    if(!baseJSON) return true;
+    try{
+      const baseEstado = hidratar(ccConCamposDelCelular(JSON.parse(baseJSON), state), defaultState());
+      return ccCompararEstados(state, baseEstado).total > 0;
+    }catch(e){ return true; }
+  }
+
   async function ccSubirANube(){
+    if(!ccHogarId) return;
+    // Integrante sin permiso de editar: nunca sube nada, solo recibe.
+    if(window.ccPuedeEditar === false){ ccSubidaPendiente = false; ccQuitarMarcaPendiente(); return; }
+    if(ccSubiendoAhora || ccUniendo){ ccSubidaPendiente = true; ccMarcarPendiente(); return; }
     if(!navigator.onLine){
       ccSubidaPendiente = true;
       ccMarcarPendiente();
-      ccMostrarBannerSync("📴 Sin internet — tus cambios quedan guardados en este celular, se suben cuando vuelva la conexión", "#C56A12", false);
+      ccMostrarBannerSync("📴 Sin internet — tus cambios quedan guardados en este celular, se suben solos cuando vuelva la conexión", "#C56A12", false);
       return;
     }
-    if(ccSubiendoAhora){ ccSubidaPendiente = true; ccMarcarPendiente(); return; }
+    // Si lo único que cambió es propio de este celular (el mes que se mira,
+    // alarmas...), no hay nada que subir.
+    if(ccBaseNube && !ccHayCambiosParaSubir()){
+      ccSubidaPendiente = false;
+      ccQuitarMarcaPendiente();
+      ccMarcarSincronizado(ccBaseNube, null);
+      return;
+    }
     ccSubiendoAhora = true;
+    ccSubidaPendiente = false;
     ccMarcarPendiente(); // se marca ANTES de intentar: si algo falla a medio camino, no se pierde el rastro
-    const datosJSON = JSON.stringify(state);
+    let exito = false;
     try{
-      // La fecha "actualizado_en" ya no la pone este celular — la pone el
-      // servidor de Supabase (trigger cc_set_actualizado_en), así el reloj
-      // de un celular mal configurado no puede romper la comparación de
-      // "qué es más nuevo" para todo el hogar. Por eso se pide de vuelta
-      // con .select() en vez de calcularla aquí.
-      const { data, error } = await sbFamiliar.from("estado_app")
-        .upsert({ hogar_id: ccHogarId, datos: state })
-        .select("actualizado_en")
-        .maybeSingle();
-      if(error){
-        console.error(error);
-        ccMostrarBannerSync("⚠️ No se pudo subir el último cambio. Reintentando...", "#C0392B", false);
-        ccSubidaPendiente = true;
-      } else {
-        ccUltimoEstadoSubidoJSON = datosJSON;
-        ccRegistrarActualizacionConocida(data ? data.actualizado_en : null);
-        ccQuitarMarcaPendiente();
-        // Si lo guardado en el celular es exactamente lo que se acaba de subir,
-        // celular y nube quedaron iguales.
-        try{ if(localStorage.getItem(STORAGE_KEY) === datosJSON) ccMarcarSincronizado(data ? data.actualizado_en : null); }catch(e){}
-        ccMostrarBannerSync("☁️ Datos subidos a la nube", "#0B7D5C", true);
-        if(ccSubidaPendiente){ ccSubidaPendiente = false; ccSubirANube(); }
+      for(let intento = 0; intento < 5 && !exito; intento++){
+        const datosJSON = JSON.stringify(state);
+        const r = await ccGuardarEnNube(JSON.parse(datosJSON), ccBaseNube);
+        if(r.ok){
+          ccBaseNube = r.fecha;
+          ccRegistrarActualizacionConocida(r.fecha);
+          ccUltimoEstadoSubidoJSON = datosJSON;
+          if(JSON.stringify(state) === datosJSON){
+            ccQuitarMarcaPendiente();
+            ccMarcarSincronizado(r.fecha, datosJSON);
+          } else {
+            ccSubidaPendiente = true; // se cambió algo mientras se subía
+          }
+          ccEsperaReintento = 5000;
+          ccMostrarBannerSync("☁️ Datos subidos a la nube", "#0B7D5C", true);
+          exito = true;
+        } else if(r.conflicto){
+          // Otro celular guardó algo mientras tanto: se trae, se une y se reintenta.
+          const nube = await ccObtenerEstadoNube();
+          if(!nube || nube.error) throw new Error("no se pudo leer la nube para unir");
+          const u = await ccUnirConNube(nube);
+          if(u.sinCambiosPropios){ ccQuitarMarcaPendiente(); exito = true; }
+        } else {
+          throw (r.error || new Error("no se pudo guardar"));
+        }
       }
+      if(!exito) throw new Error("la nube siguió cambiando; se reintenta en un momento");
     }catch(e){
-      // Una excepción de red (no solo un error de Supabase) no debe dejar
-      // esto atascado para siempre — se marca como pendiente y se puede
-      // reintentar más tarde (al volver la conexión o al reabrir la app).
       console.error("ccSubirANube:", e);
-      ccMostrarBannerSync("⚠️ No se pudo subir el último cambio. Reintentando...", "#C0392B", false);
       ccSubidaPendiente = true;
+      ccMarcarPendiente();
+      ccMostrarBannerSync("⚠️ No se pudo subir el último cambio. Se reintenta solo en un momento.", "#C0392B", false);
     }finally{
       ccSubiendoAhora = false;
     }
+    if(ccSubidaPendiente){
+      if(exito){ ccSubidaPendiente = false; ccSubirANube(); }
+      else ccProgramarReintento();
+    }
+  }
+
+  /* ---- Llegó una versión nueva de la nube (tiempo real o al volver a la app) ---- */
+  async function ccRecibirDeNube(nube, aviso){
+    if(ccSubiendoAhora || ccUniendo) return;       // la subida en curso ya la va a unir
+    if(ccEsRespuestaDesactualizada(nube.actualizado_en)) return;
+    const hayCambiosPropios = ccSubidaPendiente || ccHaySubidaPendienteGuardada() || !ccLocalSinCambiosDesdeSync();
+    if(hayCambiosPropios){
+      const u = await ccUnirConNube(nube);
+      if(!u.sinCambiosPropios) ccSubirANube();
+    } else {
+      ccAplicarEstadoNube(nube);
+    }
+    if(aviso) ccMostrarBannerSync(aviso, "#0B7D5C", true);
   }
 
   // Marca de a qué hogar pertenecen los datos guardados en este celular. Sirve
@@ -9682,7 +9962,7 @@ if(typeof supabase !== "undefined"){
   }
 
   /* ---- Tiempo real: si otro dispositivo de tu hogar sube un cambio, se
-     refleja aquí solo, sin tener que recargar la página. ---- */
+     une o se trae aquí al momento, sin tener que cerrar y abrir la app. ---- */
   let ccRealtimeChannel = null;
   function ccActivarRealtime(){
     if(ccRealtimeChannel) return;
@@ -9693,28 +9973,8 @@ if(typeof supabase !== "undefined"){
       }, (payload)=>{
         const nuevo = payload.new && payload.new.datos;
         if(!nuevo) return;
-        // Si hay un cambio local subiendo (o por subir) en este preciso
-        // momento, no se toca "state" — si se aplicara este eco por encima
-        // de un guardado que todavía está en camino, la próxima vez que se
-        // guarde algo se subiría por encima de este cambio (u otro más
-        // reciente) sin darse cuenta.
-        if(ccSubiendoAhora || ccSubidaPendiente) return;
-        // Si es el eco de lo que nosotros mismos acabamos de subir, no hay
-        // nada que actualizar — evita un refresco innecesario o un choque
-        // con lo que se esté escribiendo en ese momento.
-        const nuevoJSON = JSON.stringify(nuevo);
-        if(nuevoJSON === ccUltimoEstadoSubidoJSON) return;
-        // Y si ya sabemos de un cambio más nuevo que este (por ejemplo uno
-        // que nosotros mismos acabamos de subir), se descarta: no tiene
-        // sentido volver para atrás.
-        if(ccEsRespuestaDesactualizada(payload.new.actualizado_en)) return;
-        ccUltimoEstadoSubidoJSON = nuevoJSON;
-        ccRegistrarActualizacionConocida(payload.new.actualizado_en);
-        state = hidratar(nuevo, defaultState());
-        ccSaveStateOriginal();
-        ccMarcarSincronizado(payload.new.actualizado_en);
-        renderAll();
-        ccMostrarBannerSync("☁️ Se actualizó con un cambio de otro dispositivo de tu hogar", "#0B7D5C", true);
+        ccRecibirDeNube({ datos: nuevo, actualizado_en: payload.new.actualizado_en },
+          "☁️ Se actualizó con un cambio de otro dispositivo de tu hogar").catch(e=> console.error("tiempo real:", e));
       })
       .subscribe();
   }
@@ -9881,6 +10141,7 @@ if(typeof supabase !== "undefined"){
       localStorage.removeItem("cc_nube_ya_conectado_" + hogarAnterior);
       localStorage.removeItem("cc_subida_pendiente_" + hogarAnterior);
       localStorage.removeItem("cc_sync_" + hogarAnterior);
+      localStorage.removeItem("cc_sync_base_" + hogarAnterior);
       localStorage.removeItem(CC_CLAVE_HOGAR_DATOS);
     }catch(e){}
     await window.ccCerrarSesionFamiliar();
@@ -9898,7 +10159,12 @@ if(typeof supabase !== "undefined"){
     const puedeEditar = esAdmin || permisos.editar !== false;
     // Globales porque renderTopbar()/ccPuedeEditarCheck() viven en el script principal.
     window.ccPuedeVerIngresos = puedeVerIngresos;
+    window.ccPuedeVerDeudas = puedeVerDeudas;
     window.ccPuedeEditar = puedeEditar;
+    ["secDeudasInicio","cardDeudasInicio","cardPagoDeudas"].forEach(function(id){
+      const el = document.getElementById(id);
+      if(el) el.style.display = puedeVerDeudas ? "" : "none";
+    });
     ["feMeses","feAhorrado","feAporte","feTasa"].forEach(function(id){
       const el = document.getElementById(id);
       if(el) el.disabled = !puedeEditar;
@@ -9921,6 +10187,8 @@ if(typeof supabase !== "undefined"){
     // otro, se empieza de cero) y se quitan las restricciones de permisos.
     ccUltimaActualizadaEnConocida = null;
     ccUltimoEstadoSubidoJSON = null;
+    ccBaseNube = null;
+    ccConexionPorReintentar = false;
     ccAplicarPermisosHogar(true, {});
     const rolElSalir = document.getElementById("ccRolHogar");
     if(rolElSalir) rolElSalir.style.display = "none";
@@ -9934,7 +10202,27 @@ if(typeof supabase !== "undefined"){
   };
 
   /* ---- Conectar: resuelve el hogar, trae o sube los datos, activa el sync ---- */
+  /* ---- Si al conectar no había internet o no se pudo leer la nube, se
+     vuelve a intentar solo: al recuperar la conexión, al volver a la app y
+     cada cierto tiempo. ---- */
+  let ccConexionPorReintentar = false;
+  let ccTimerReconexion = null;
+  let ccConectando = false;
+  function ccReintentarConexionLuego(){
+    ccConexionPorReintentar = true;
+    if(ccTimerReconexion) return;
+    ccTimerReconexion = setTimeout(()=>{ ccTimerReconexion = null; if(ccConexionPorReintentar) ccConectarHogar(); }, 20000);
+  }
+  window.addEventListener("online", ()=>{ if(ccConexionPorReintentar) ccConectarHogar(); });
+
   async function ccConectarHogar(){
+    if(ccConectando) return false;
+    ccConectando = true;
+    try{ return await ccConectarHogarInterno(); }
+    finally{ ccConectando = false; }
+  }
+  async function ccConectarHogarInterno(){
+    ccConexionPorReintentar = false;
     const { data: sesionData } = await sbFamiliar.auth.getSession();
     if(!sesionData.session) return false;
     ccUserId = sesionData.session.user.id;
@@ -9981,7 +10269,8 @@ if(typeof supabase !== "undefined"){
     // Si se activara antes y algo guardara mientras tanto, subiría datos
     // locales viejos y pisaría lo que ya había en la nube.
     if(!navigator.onLine){
-      ccMostrarBannerSync("📴 Sin internet — viendo lo último guardado en este celular. Conéctate para sincronizar.", "#C56A12", true);
+      ccReintentarConexionLuego();
+      ccMostrarBannerSync("📴 Sin internet — viendo lo último guardado en este celular. Se sincroniza solo cuando vuelva la conexión.", "#C56A12", true);
       if(resultado.advertencia){
         setTimeout(()=>{ ccMostrarBannerSync("⚠️ " + resultado.advertencia, "#C0392B", false); }, 3200);
       }
@@ -10000,36 +10289,41 @@ if(typeof supabase !== "undefined"){
     const hogarDatosLocales = ccHogarDeLosDatosLocales();
     const localEsDeOtroHogar = !!hogarDatosLocales && hogarDatosLocales !== ccHogarId;
 
-    // Si quedó un cambio local que no se confirmó que subió de verdad (por
-    // ejemplo: se cerró la app con mala conexión justo después de guardar,
-    // o algo falló a medio camino), nunca se trae la nube y se pisa por
-    // encima sin más: se sube, o si la nube también cambió, se compara.
+    // ¿Este celular tiene cambios propios que la nube no conoce? (una subida
+    // que quedó pendiente, o cualquier cambio desde la última vez que celular
+    // y nube quedaron iguales). Nunca se trae la nube y se pisa por encima: se
+    // une con memoria (ccUnirConNube) y luego se sube con candado.
     const nube = await ccObtenerEstadoNube();
+
+    if(nube && nube.error){
+      // No se pudo LEER la nube (no es lo mismo que "no hay nada"): no se
+      // activa nada ni se sube nada; se vuelve a intentar en un momento.
+      ccMostrarBannerSync("⚠️ No se pudo leer tu hogar en la nube. Se vuelve a intentar solo — mientras tanto tus cambios quedan en este celular.", "#C56A12", false);
+      ccReintentarConexionLuego();
+      return true;
+    }
 
     // Se revisan DESPUÉS de traer la nube: si mientras llegaba la respuesta
     // se alcanzó a guardar algo en este celular, cuenta como cambio propio.
     const pendiente = yaConectadoAntes && ccHaySubidaPendienteGuardada() && !localEsDeOtroHogar;
-    // ¿Este celular cambió algo desde la última vez que quedó igual a la nube?
     const localSinCambios = !pendiente && ccLocalSinCambiosDesdeSync();
+    const puedeEditar = window.ccPuedeEditar !== false;
 
     if(nube === null && resultado.nuevo && localEsDeOtroHogar){
       // Hogar recién creado, pero lo que hay en el celular es de otro hogar:
       // se guarda una copia aparte (por si acaso) y este hogar empieza vacío.
       // Los datos del hogar anterior siguen intactos en la nube de ese hogar.
-      try{
-        localStorage.setItem("cc_respaldo_hogar_anterior", JSON.stringify({ hogar: hogarDatosLocales, guardado: new Date().toISOString(), datos: state }));
-      }catch(e){}
+      ccGuardarCopiaAntesDeSincronizar();
       state = defaultState();
       saveState();
       renderAll();
-      ccMostrarBannerSync("☁️ Hogar nuevo creado — empieza vacío. Los datos del hogar anterior siguen guardados en ese hogar.", "#0B7D5C", true);
+      ccMostrarBannerSync("☁️ Hogar nuevo creado — empieza vacío. Los datos del hogar anterior siguen guardados en ese hogar (y hay una copia en Ajustes).", "#0B7D5C", true);
       ccActivarSyncSaveState();
       ccActivarRealtime();
       ccSubirANube();
       localStorage.setItem(claveYaConectado, "1");
     } else if(nube === null && pendiente){
-      // Quedó un cambio sin subir y la nube no respondió con datos: se
-      // termina de subir lo de este celular (como antes), nunca se pisa.
+      // La nube de este hogar está vacía y quedó un cambio sin subir: se sube.
       ccActivarSyncSaveState();
       ccActivarRealtime();
       ccMostrarBannerSync("☁️ Terminando de subir un cambio pendiente...", "#0B7D5C", false);
@@ -10045,44 +10339,52 @@ if(typeof supabase !== "undefined"){
         ccSubirANube();
         localStorage.setItem(claveYaConectado, "1");
       } else {
-        // El hogar ya existía pero no se pudo confirmar su contenido (error
-        // de lectura, RLS, etc.) — NO se activa la subida automática, para
-        // no arriesgarse a pisar datos reales de tu hogar por una falla
-        // pasajera.
+        // El hogar ya existía pero no tiene datos guardados todavía (o no se
+        // pudieron confirmar) — NO se activa la subida automática, para no
+        // arriesgarse a pisar datos reales de tu hogar.
         ccMostrarBannerSync("⚠️ No se pudieron confirmar los datos de tu hogar en la nube. Vuelve a intentar con mejor conexión antes de seguir — por ahora no se sube ni se cambia nada.", "#C0392B", false);
       }
+    } else if(!puedeEditar){
+      // Integrante sin permiso de editar: siempre recibe lo de la nube y nunca
+      // sube. Si este celular tenía algo distinto, antes se guarda una copia.
+      if(ccEstadoLocalTieneDatos() && !localSinCambios) ccGuardarCopiaAntesDeSincronizar();
+      ccAplicarEstadoNube(nube);
+      ccActivarSyncSaveState();
+      ccActivarRealtime();
+      ccMostrarBannerSync("☁️ Datos actualizados desde tu hogar", "#0B7D5C", true);
+      localStorage.setItem(claveYaConectado, "1");
     } else if(yaConectadoAntes && !localEsDeOtroHogar && localSinCambios){
       // Caso normal: este celular no cambió nada desde la última vez que
       // quedó igual a la nube → se trae la nube sin preguntar (si otro
       // celular del hogar agregó, cambió o borró algo, llega aquí).
-      ccActivarSyncSaveState();
-      ccActivarRealtime();
       ccAplicarEstadoNube(nube);
-      ccMostrarBannerSync("☁️ Datos actualizados desde tu hogar", "#0B7D5C", true);
-    } else if(yaConectadoAntes && !localEsDeOtroHogar && ccNubeSinCambiosDesdeSync(nube)){
-      // Solo cambió este celular (por ejemplo, sin internet): la nube sigue
-      // igual que la última vez, así que se suben los cambios sin preguntar.
       ccActivarSyncSaveState();
       ccActivarRealtime();
-      ccMostrarBannerSync("☁️ Subiendo los cambios de este celular...", "#0B7D5C", true);
-      await ccSubirANube();
-    } else if(yaConectadoAntes && !localEsDeOtroHogar){
-      // Cambiaron los dos, o no hay cómo saberlo (por ejemplo, viniendo de
-      // una versión anterior que no subía los cambios): se compara dato por
-      // dato y solo se pregunta si de verdad hay diferencias.
-      await ccReconciliarConNube(nube);
-    } else if(ccEstadoLocalTieneDatos() && !localEsDeOtroHogar){
-      // Primera vez que este celular entra a este hogar y ya tenía datos
-      // propios: se compara con lo de la nube en vez de pisar nada.
-      await ccReconciliarConNube(nube);
+      ccMostrarBannerSync("☁️ Datos actualizados desde tu hogar", "#0B7D5C", true);
+    } else if(!localEsDeOtroHogar && (yaConectadoAntes || ccEstadoLocalTieneDatos())){
+      // Este celular tiene cambios propios (o entra por primera vez con datos
+      // propios): se une con lo de la nube y lo que quede se sube con candado.
+      // La sincronización (tiempo real, revisar al volver) se activa DESPUÉS
+      // de unir, para que nada llegue a mitad de camino.
+      const u = await ccUnirConNube(nube);
+      ccActivarSyncSaveState();
+      ccActivarRealtime();
+      if(!u.sinCambiosPropios){
+        ccMostrarBannerSync("☁️ Subiendo los cambios de este celular...", "#0B7D5C", true);
+        await ccSubirANube();
+      } else {
+        ccMostrarBannerSync("☁️ Datos actualizados desde tu hogar", "#0B7D5C", true);
+      }
       localStorage.setItem(claveYaConectado, "1");
     } else {
       // Primera vez y este celular no tenía nada propio que perder (por
-      // ejemplo, alguien recién invitado), o sus datos eran de otro hogar:
-      // se trae la nube sin preguntar.
+      // ejemplo, alguien recién invitado), o sus datos eran de OTRO hogar:
+      // se trae la nube. Si tenía datos de otro hogar, antes se guarda una
+      // copia (se puede descargar desde Ajustes).
+      if(localEsDeOtroHogar && ccEstadoLocalTieneDatos()) ccGuardarCopiaAntesDeSincronizar();
+      ccAplicarEstadoNube(nube);
       ccActivarSyncSaveState();
       ccActivarRealtime();
-      ccAplicarEstadoNube(nube);
       ccMostrarBannerSync("☁️ Datos actualizados desde tu hogar", "#0B7D5C", true);
       localStorage.setItem(claveYaConectado, "1");
     }
@@ -10118,30 +10420,19 @@ if(typeof supabase !== "undefined"){
     // ya se ejecutó de verdad (nunca en el caso "conectado pero sin internet
     // todavía") — usarlo como bandera evita revisar la nube antes de que la
     // sincronización esté realmente activa.
-    if(!ccHogarId || !ccSaveStateOriginal) return;
+    if(!ccSincronizacionActiva()){ if(ccConexionPorReintentar) ccConectarHogar(); return; }
     const ahora = Date.now();
     if(ahora - ccUltimaRevisionNube < CC_MIN_MS_ENTRE_REVISIONES) return;
     ccUltimaRevisionNube = ahora;
-    // Si hay un cambio local subiendo (o por subir), lo que se lea de la
-    // nube ahora mismo puede estar desactualizado — no se revisa esta vez.
-    if(ccSubiendoAhora || ccSubidaPendiente) return;
+    if(ccSubiendoAhora || ccUniendo) return;
+    // Si hay un cambio propio esperando subir, se intenta subir: si la nube
+    // cambió mientras tanto, el candado lo detecta y se une ahí mismo.
+    if(ccSubidaPendiente || ccHaySubidaPendienteGuardada()){ ccSubirANube(); return; }
     try{
       const nube = await ccObtenerEstadoNube();
-      if(!nube) return;
-      // Mientras se esperaba esta respuesta pudo haber empezado (o incluso
-      // terminado) una subida local más reciente — se vuelve a revisar antes
-      // de aplicar nada, para no pisar un cambio que se acaba de guardar.
-      if(ccSubiendoAhora || ccSubidaPendiente) return;
-      if(ccEsRespuestaDesactualizada(nube.actualizado_en)) return;
-      const nuevoJSON = JSON.stringify(nube.datos);
-      if(nuevoJSON === ccUltimoEstadoSubidoJSON) return; // sin cambios
-      ccUltimoEstadoSubidoJSON = nuevoJSON;
-      ccRegistrarActualizacionConocida(nube.actualizado_en);
-      state = hidratar(nube.datos, defaultState());
-      ccSaveStateOriginal();
-      ccMarcarSincronizado(nube.actualizado_en);
-      renderAll();
-      ccMostrarBannerSync("☁️ Se actualizó al volver a la app", "#0B7D5C", true);
+      if(!nube || nube.error) return;
+      if(ccMismaFecha(nube.actualizado_en, ccBaseNube)) return;   // sin cambios
+      await ccRecibirDeNube(nube, "☁️ Se actualizó al volver a la app");
     }catch(e){ /* sin internet: se queda con lo último que tenía */ }
   }
   window.ccRevisarNubeAlVolver = ccRevisarNubeAlVolver;
