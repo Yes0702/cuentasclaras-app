@@ -7861,7 +7861,7 @@ const CONFIG = {
   apiVersion: "https://api.github.com/repos/Yes0702/cuentasclaras/releases/latest",
   urlVersion: "https://github.com/Yes0702/cuentasclaras/releases/latest/download/version.json"
 };
-const APP_VERSION = "9.16";
+const APP_VERSION = "9.17";
 
 /* =====================================================================
    AVISO DE ACTUALIZACIÓN (revisa al abrir la app)
@@ -9789,6 +9789,17 @@ if(typeof supabase !== "undefined"){
     let tope = null;
     let mensajeErrorCodigo = "";
     const nuevoHogarId = crypto.randomUUID();
+
+    // Mientras la nube esté en modo gratis (lo decide el administrador en
+    // Supabase, tabla cc_config), el hogar se crea SIN pedir código. Si el
+    // modo gratis está apagado (o el servidor todavía no tiene esta función),
+    // se pide el código como siempre.
+    const gratis = await sbFamiliar.rpc("crear_hogar_gratis", { p_hogar_id: nuevoHogarId, p_nombre: "Mi hogar" });
+    if(!gratis.error && gratis.data !== null && gratis.data !== undefined){
+      localStorage.removeItem("cc_codigo_acceso");
+      return { hogarId: nuevoHogarId, rol: "admin", advertencia: ccAdvertenciaInvitacion, nuevo: true };
+    }
+    if(gratis.error && !ccEsFuncionFaltante(gratis.error)) return { error: "creando hogar: " + gratis.error.message };
     while(tope === null){
       if(!codigoAcceso){
         codigoAcceso = await ccPedirCodigoAccesoAsync(mensajeErrorCodigo);
