@@ -2129,7 +2129,7 @@ function normalizarRubro(r, ingreso){
 function normalizarIngreso(i){
   return { id: i.id || uid(), nombre: (i.nombre || "Ingreso").toString(), monto: Number(i.monto)||0 };
 }
-function normalizarGasto(g){
+function normalizarGasto(g, i){
   const fecha = g.fecha || "";
   let anio = Number(g.anio);
   let mes = g.mes;
@@ -2140,7 +2140,11 @@ function normalizarGasto(g){
   // Object.assign conserva los datos extra del gasto (origenDeuda, origenMovimiento,
   // aCapitalAplicado, etc.). Antes se reconstruía solo con estos 7 campos y cada vez
   // que se abría la app se perdía la marca de "este gasto es el pago de la deuda X".
-  return Object.assign({}, g, { id: g.id || uid(), fecha, mes, anio, rubro: g.rubro||"Extras", monto: Number(g.monto)||0, nota: g.nota||"" });
+  // Si un gasto viejo no tiene id, se le da uno que sale SIEMPRE igual para los
+  // mismos datos (no uno al azar): así este celular y la nube lo reconocen como
+  // el mismo gasto al compararlos, en vez de verlo como dos distintos.
+  const id = g.id || ("g_" + ccHashTexto([fecha, mes, anio, g.rubro, g.monto, g.nota, i].join("|")).replace(":", "_"));
+  return Object.assign({}, g, { id, fecha, mes, anio, rubro: g.rubro||"Extras", monto: Number(g.monto)||0, nota: g.nota||"" });
 }
 
 /* Reparación de datos: los pagos de deuda guardados mientras existía el error de arriba
@@ -2332,7 +2336,7 @@ function hidratar(parsed, base){
     // (así ninguna deuda vieja pierde información al actualizar la app).
     if(!Array.isArray(d.movimientos) || d.movimientos.length===0){
       d.movimientos = [{
-        id: uid(),
+        id: "mov_" + (d.id || d.nombre || ""),   // fijo (no al azar): ver nota en normalizarGasto
         descripcion: d.nombre,
         valor: d.inicial || d.saldo || 0,
         saldo: d.saldo || 0,
@@ -9561,17 +9565,24 @@ if(typeof supabase !== "undefined"){
 
   /* ---- Cuando los dos lados cambiaron (o no se sabe): comparar y decidir ---- */
   async function ccReconciliarConNube(nube){
+    const localEstado = state;
     const nubeEstado = hidratar(JSON.parse(JSON.stringify(nube.datos)), defaultState());
-    const diff = ccCompararEstados(state, nubeEstado);
-    ccActivarSyncSaveState();
-    ccActivarRealtime();
+    const diff = ccCompararEstados(localEstado, nubeEstado);
     if(diff.total === 0){
       // Tienen lo mismo: se toma la nube tal cual y queda la marca de sincronizado.
+      ccActivarSyncSaveState();
+      ccActivarRealtime();
       ccAplicarEstadoNube(nube);
       return;
     }
     ccGuardarCopiaAntesDeSincronizar();
+    // La sincronización (tiempo real, revisar al volver) se activa DESPUÉS de
+    // que se decida: si se activara antes, un cambio de otro celular que
+    // llegara mientras la ventana está abierta pisaría lo de este celular
+    // antes de poder unirlo.
     const decision = await ccPreguntarDiferencias(diff);
+    ccActivarSyncSaveState();
+    ccActivarRealtime();
     if(decision.modo === "nube"){
       ccAplicarEstadoNube(nube);
       ccMostrarBannerSync("☁️ Se dejaron los datos de la nube", "#0B7D5C", true);
@@ -9580,7 +9591,7 @@ if(typeof supabase !== "undefined"){
       ccMostrarBannerSync("☁️ Subiendo los datos de este celular", "#0B7D5C", true);
       await ccSubirANube();
     } else {
-      state = hidratar(ccUnirEstados(state, nubeEstado, diff, decision.elecciones), defaultState());
+      state = hidratar(ccUnirEstados(localEstado, nubeEstado, diff, decision.elecciones), defaultState());
       ccSaveStateOriginal();
       renderAll();
       ccRegistrarActualizacionConocida(nube.actualizado_en);
@@ -9993,11 +10004,13 @@ if(typeof supabase !== "undefined"){
     // ejemplo: se cerró la app con mala conexión justo después de guardar,
     // o algo falló a medio camino), nunca se trae la nube y se pisa por
     // encima sin más: se sube, o si la nube también cambió, se compara.
+    const nube = await ccObtenerEstadoNube();
+
+    // Se revisan DESPUÉS de traer la nube: si mientras llegaba la respuesta
+    // se alcanzó a guardar algo en este celular, cuenta como cambio propio.
     const pendiente = yaConectadoAntes && ccHaySubidaPendienteGuardada() && !localEsDeOtroHogar;
     // ¿Este celular cambió algo desde la última vez que quedó igual a la nube?
     const localSinCambios = !pendiente && ccLocalSinCambiosDesdeSync();
-
-    const nube = await ccObtenerEstadoNube();
 
     if(nube === null && resultado.nuevo && localEsDeOtroHogar){
       // Hogar recién creado, pero lo que hay en el celular es de otro hogar:
