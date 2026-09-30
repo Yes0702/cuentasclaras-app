@@ -7689,15 +7689,16 @@ function renderSeguridad(){
     <div class="card">
       <div class="switch-row" style="align-items:center;">
         <div style="min-width:0; flex:1;">
-          <div class="s-txt">🔒 Bloqueo con huella</div>
+          <div class="s-txt">🔒 Bloqueo de la app</div>
           <div class="s-sub">${activo
-            ? "Activado. Se pide tu huella o el desbloqueo del celular al abrir la app."
-            : "Protege tus cuentas: pide tu huella o el desbloqueo del celular al abrir la app."}</div>
+            ? "Activado. Al abrir la app se pide tu huella, patrón, PIN o contraseña del celular."
+            : "Protege tus cuentas: al abrir la app se pide tu huella, patrón, PIN o contraseña del celular."}</div>
         </div>
         <button class="switch ${activo?"on":""}" style="flex:0 0 auto;" onclick="ccToggleBloqueo(${activo?"false":"true"})" aria-label="Activar bloqueo"></button>
       </div>
       <div class="hint" style="margin-top:10px;">
-        Usa el mismo desbloqueo de tu celular, así que <b>no hay ninguna clave nueva que memorizar</b>.
+        Usa el mismo desbloqueo de tu celular (el que tengas: huella, patrón, PIN o contraseña), así que <b>no hay ninguna clave nueva que memorizar</b>.
+        Si la huella no te funciona, en la ventana de desbloqueo toca <b>"Usar patrón"</b> (o "Usar PIN").
         Recuerda hacer respaldo de tus datos de vez en cuando.
       </div>
     </div>`;
@@ -8846,7 +8847,7 @@ async function ccVerificar(){
       reason: "Desbloquea Cuentas Claras",
       title: "Cuentas Claras",
       subtitle: "Verifica tu identidad",
-      description: "Usa tu huella o el desbloqueo del celular",
+      description: "Usa tu huella, patrón, PIN o contraseña",
       useFallback: true,
       maxAttempts: 5
     });
@@ -8866,7 +8867,7 @@ async function ccIntentarDesbloqueo(){
     ccDesbloqueada = true;
     ccMostrarLock(false);
   }else{
-    if(msg) msg.textContent = "No se pudo verificar. Intenta de nuevo.";
+    if(msg) msg.textContent = "No se pudo verificar. Intenta de nuevo — si la huella no funciona, toca «Usar patrón» o «Usar PIN» en la ventana.";
   }
 }
 
@@ -8886,7 +8887,7 @@ async function ccToggleBloqueo(activar){
     if(!B){ toast("El bloqueo solo funciona en la app instalada (APK)."); renderAjustes(); return; }
     const disp = await ccHayBiometria();
     if(!disp){
-      toast("Primero configura huella o bloqueo de pantalla en tu celular.");
+      toast("Primero configura un bloqueo de pantalla en tu celular (patrón, PIN, contraseña o huella).");
       renderAjustes();
       return;
     }
