@@ -2156,6 +2156,42 @@ function normalizarGasto(g, i){
    ("Pago de deuda: <nombre>"), SOLO si hay exactamente una deuda con ese nombre — si hay
    duda, se deja como está. Si la nota dice qué compra/avance se pagó y esa descripción es
    única dentro de la deuda, también se recupera origenMovimiento. */
+/* Abonos a capital hechos antes de que quedaran como gasto: solo bajaban la
+   deuda (se guardaban en d.abonosCapital). Ahora cada uno pasa a ser un gasto
+   "Pago de deuda" en su fecha (la deuda NO se vuelve a bajar: ya se había
+   bajado). El id sale de los datos del abono, así dos celulares que hacen esta
+   misma conversión crean exactamente el mismo gasto (no se duplica). */
+function ccNotaAbonoCapital(modo, conInteres){
+  return "Abono a capital" + (conInteres ? (modo === "cuota" ? " · reduce la cuota" : " · reduce el tiempo") : "");
+}
+function ccFechaAMesAnio(fecha){
+  const ok = /^\d{4}-\d{2}-\d{2}$/.test(String(fecha||""));
+  if(!ok) return null;
+  const mi = Number(fecha.slice(5,7)) - 1;
+  if(mi < 0 || mi > 11) return null;
+  return { mes: MESES[mi], anio: Number(fecha.slice(0,4)) };
+}
+function ccMigrarAbonosCapital(s){
+  (s.deudas || []).forEach(d=>{
+    if(!Array.isArray(d.abonosCapital)){ if(d.abonosCapital !== undefined) delete d.abonosCapital; return; }
+    d.abonosCapital.forEach((a, i)=>{
+      const monto = Math.round(Number(a && a.monto) || 0);
+      if(monto <= 0) return;
+      const id = "gab_" + ccHashTexto([d.id, a.fecha, monto, a.modo, i].join("|")).replace(":", "_");
+      if(s.gastos.some(g=> g.id === id)) return;
+      const ma = ccFechaAMesAnio(a.fecha) || { mes: s.mesActivo, anio: s.anioActivo };
+      s.gastos.push({
+        id, fecha: ccFechaAMesAnio(a.fecha) ? a.fecha : "", mes: ma.mes, anio: ma.anio,
+        rubro: "Pago de deuda: " + d.nombre, monto,
+        nota: ccNotaAbonoCapital(a.modo, (d.tasaAnual||0) > 0),
+        origenDeuda: d.id, abonoCapital: true, modoAbono: a.modo === "cuota" ? "cuota" : "tiempo",
+        aCapitalAplicado: monto, interesPagadoAplicado: 0, interesNoPagadoAplicado: null,
+        cuotaAnterior: null, ahorroAbono: Math.round(Number(a.ahorro) || 0)
+      });
+    });
+    delete d.abonosCapital;
+  });
+}
 function ccReenlazarPagosDeDeuda(gastos, deudas){
   const PREFIJO = "Pago de deuda: ";
   (gastos||[]).forEach(g=>{
@@ -2601,6 +2637,7 @@ function hidratar(parsed, base){
     return m;
   });
   ccReenlazarPagosDeDeuda(s.gastos, s.deudas);
+  ccMigrarAbonosCapital(s);
   s.fondoEmergencia = Object.assign({meses:3, ahorrado:0, aporteMensual:0, tasaAnual:0, historial:[]}, s.fondoEmergencia||{});
   s.fondoEmergencia.historial = Array.isArray(s.fondoEmergencia.historial) ? s.fondoEmergencia.historial : [];
   s.inversiones = Array.isArray(s.inversiones) ? s.inversiones : [];
@@ -3716,6 +3753,7 @@ function ccIrAPagar(tipo){
 }
 
 function renderDashboard(){
+  if(typeof renderTopbar==="function") renderTopbar();  // el valor de arriba se actualiza al instante
   renderOrdenPagos();
   const repartido = pctRepartido();
   const sob = sobrante();
@@ -4830,7 +4868,7 @@ function renderPagoDeudas(){
        </div>
      </div>` +
     deudas.map(d=>{
-      const yaPago = state.gastos.find(g=> g.origenDeuda===d.id && g.mes===state.mesActivo && g.anio===state.anioActivo);
+      const yaPago = state.gastos.find(g=> g.origenDeuda===d.id && !g.abonoCapital && g.mes===state.mesActivo && g.anio===state.anioActivo);
       const sugerido = d.pago || 0;
       const interesMes = Math.round(d.saldo * ((d.tasaAnual||0)/100/12));
       return `
@@ -4972,7 +5010,14 @@ function deshacerPagoDeuda(gastoId, deudaId){
   if(!ccPuedeEditarCheck()) return;
   const g = state.gastos.find(x=>x.id===gastoId);
   const d = state.deudas.find(x=>x.id===deudaId);
-  if(!g || !d) return;
+  if(!g) return;
+  if(!d){
+    // La deuda ya no existe: solo se quita el gasto.
+    state.gastos = state.gastos.filter(x=>x.id!==gastoId);
+    saveState(); renderGastos(); renderDashboard();
+    toast("Gasto eliminado");
+    return;
+  }
   const tasaMensual = (d.tasaAnual||0)/100/12;
   const movPagado = g.origenMovimiento ? (d.movimientos||[]).find(m=>m.id===g.origenMovimiento) : null;
   if(movPagado){
@@ -4994,6 +5039,14 @@ function deshacerPagoDeuda(gastoId, deudaId){
       recalcularDeuda(d);
     }
     if(g.interesPagadoAplicado) d.interesPagado = Math.max(0, (d.interesPagado||0) - g.interesPagadoAplicado);
+    // Abono con "reducir cuota": vuelve la cuota que había antes.
+    const ca = g.cuotaAnterior;
+    if(ca && ca.movimiento){
+      const m = (d.movimientos||[]).find(x=>x.id===ca.movimiento);
+      if(m){ m.cuotaMensual = ca.valor; recalcularDeuda(d); }
+    } else if(ca && ca.pago != null){
+      d.pago = ca.pago;
+    }
   } else {
     // Gasto de pago de deuda de antes de este cambio, sin el detalle guardado
     // — se aproxima con el saldo actual como se hacía hasta ahora (mejor eso
@@ -5015,7 +5068,49 @@ function deshacerPagoDeuda(gastoId, deudaId){
   renderGastos();
   renderDeudas();
   renderDashboard();
-  toast("Pago deshecho");
+  toast(g.abonoCapital ? "Abono deshecho: el dinero volvió a la deuda" : "Pago deshecho: el dinero volvió a la deuda");
+}
+
+/* Editar un pago o abono de deuda desde la lista de gastos o desde el historial
+   de la deuda: se deshace (el dinero vuelve a la deuda) y queda el monto listo
+   para corregirlo y registrarlo de nuevo. */
+async function ccEditarGastoDeDeuda(gastoId){
+  if(!ccPuedeEditarCheck()) return;
+  const g = state.gastos.find(x=>x.id===gastoId);
+  if(!g) return;
+  const ok = await ccConfirmAsync("Para editar " + (g.abonoCapital ? "este abono" : "este pago") + " se deshace (el dinero vuelve a la deuda) y queda el monto listo para que lo corrijas y lo vuelvas a registrar. ¿Continuar?");
+  if(!ok) return;
+  const deudaId = g.origenDeuda, monto = g.monto, fecha = g.fecha, modo = g.modoAbono || "tiempo";
+  const existe = state.deudas.some(d=> d.id===deudaId);
+  deshacerPagoDeuda(gastoId, deudaId);
+  if(!existe) return;
+  const montoTxt = monto ? Number(monto).toLocaleString("es-CO") : "";
+  if(g.abonoCapital){
+    showView("deudas");
+    abonandoDeudaId = deudaId;
+    ccModoAbono = {}; ccModoAbono[deudaId] = modo;
+    renderDeudas();
+    setTimeout(()=>{
+      const el = document.getElementById("abonoDeudaInput_"+deudaId);
+      if(el){ el.value = montoTxt; maskMiles(el); }
+      const f = document.getElementById("abonoFecha_"+deudaId);
+      if(f && fecha) f.value = fecha;
+      ccSetModoAbono(deudaId, modo);
+      ccPreviewAbono(deudaId);
+      const card = document.getElementById("deudaCard_"+deudaId);
+      if(card && card.scrollIntoView) card.scrollIntoView({ block:"center" });
+      if(el) el.focus();
+    }, 120);
+    return;
+  }
+  if(g.origenMovimiento){
+    ccDraftVals["pagoMovInput_"+g.origenMovimiento] = montoTxt;
+    irAPagarMovimiento(deudaId, g.origenMovimiento);
+    return;
+  }
+  ccDraftVals["pagoDeudaInput_"+deudaId] = montoTxt;
+  ccIrAPagoDeudas();
+  setTimeout(()=> ccPreviewPagoDeuda(deudaId), 400);
 }
 
 /* "Editar este pago": deshace el pago del mes y deja el monto anterior listo para ajustar,
@@ -5258,7 +5353,7 @@ function pintarGasto(g){
 let editingGastoId = null;
 function openGastoEdit(id){
   const g = state.gastos.find(x=>x.id===id);
-  if(g && g.origenDeuda){ toast("Edita este pago desde Gastos → 'Registrar pago de deudas'."); return; }
+  if(g && g.origenDeuda){ ccEditarGastoDeDeuda(id); return; }
   editingGastoId = id; renderGastos();
 }
 function closeGastoEdit(){ editingGastoId = null; renderGastos(); }
@@ -6823,27 +6918,46 @@ function ccEjecutarAbonoCapital(id){
   const modo = ccModoAbono[id] || "tiempo";
   const r = ccAhorroAbono(d, monto, modo);
 
-  // Abono a capital: TODO baja la deuda (repartido entre los movimientos existentes)
+  // Abono a capital: TODO baja la deuda (repartido entre los movimientos existentes).
+  // Se guarda cuánto se aplicó de verdad, para poder deshacerlo exacto.
+  const saldoMovs = ()=> Array.isArray(d.movimientos) && d.movimientos.length
+    ? d.movimientos.reduce((t,m)=> t + Math.max(0, m.saldo||0), 0) : (d.saldo||0);
+  const antes = saldoMovs();
   ccDistribuirCapitalMovimientos(d, monto);
+  const aplicado = Math.max(0, Math.round(antes - saldoMovs())) || monto;
   // Si eligió reducir cuota: solo tiene sentido claro cuando la deuda es de UN solo movimiento
   // (una tarjeta con varias compras no tiene "una" cuota única que reducir).
+  let cuotaAnterior = null;
   if(modo==="cuota" && r.nuevaCuota>0 && d.tasaAnual>0){
     if(Array.isArray(d.movimientos) && d.movimientos.length===1){
+      cuotaAnterior = { movimiento: d.movimientos[0].id, valor: d.movimientos[0].cuotaMensual||0 };
       d.movimientos[0].cuotaMensual = r.nuevaCuota;
       recalcularDeuda(d);
     } else {
+      cuotaAnterior = { pago: d.pago||0 };
       d.pago = r.nuevaCuota;
     }
   }
-  // Guardar historial de abonos a capital
-  if(!Array.isArray(d.abonosCapital)) d.abonosCapital = [];
-  d.abonosCapital.push({ fecha, monto, modo, ahorro: r.ahorro });
+  // El abono es plata que salió del bolsillo: queda como gasto en su fecha
+  // (suma a lo gastado y se resta del disponible) y desde ahí se puede editar
+  // o borrar (borrarlo le devuelve el dinero a la deuda).
+  const fechaAbono = ccFechaAMesAnio(fecha) ? fecha : fechaLocalHoy();
+  const ma = ccFechaAMesAnio(fechaAbono);
+  state.gastos.push({
+    id: uid(), fecha: fechaAbono, mes: ma.mes, anio: ma.anio,
+    rubro: "Pago de deuda: "+d.nombre, monto: aplicado,
+    nota: ccNotaAbonoCapital(modo, (d.tasaAnual||0) > 0),
+    origenDeuda: d.id, abonoCapital: true, modoAbono: modo,
+    aCapitalAplicado: aplicado, interesPagadoAplicado: 0, interesNoPagadoAplicado: null,
+    cuotaAnterior, ahorroAbono: Math.round(r.ahorro||0)
+  });
 
   ccCerrarModalAbono();
   abonandoDeudaId = null;
   ccModoAbono = {};
   saveState();
   renderDeudas();
+  renderGastos();
   renderDashboard();
   // Mensaje motivador
   setTimeout(()=>{
@@ -7012,7 +7126,41 @@ function ccPagarMovimientoEspecifico(deudaId, movId){
   toast("Pago de "+money(aplicado)+" aplicado a "+(m.descripcion||"ese movimiento"));
 }
 
+/* Historial de pagos y abonos de una deuda (al final de su tarjeta). Son los
+   mismos gastos "Pago de deuda": editar o borrar aquí es lo mismo que en Gastos. */
+let verHistorialDeudaSet = new Set();
+function toggleHistorialDeuda(id){
+  if(verHistorialDeudaSet.has(id)) verHistorialDeudaSet.delete(id); else verHistorialDeudaSet.add(id);
+  renderDeudas();
+}
+function ccHtmlHistorialPagosDeuda(d){
+  const pagos = state.gastos.filter(g=> g.origenDeuda === d.id)
+    .slice().sort((a,b)=> String(b.fecha||"").localeCompare(String(a.fecha||"")) || ((b.anio||0)-(a.anio||0)));
+  if(!pagos.length) return "";
+  const abierto = verHistorialDeudaSet.has(d.id);
+  return `
+      <button type="button" class="cc-colapsable" style="margin-top:10px;" onclick="event.stopPropagation(); toggleHistorialDeuda('${d.id}')">
+        <span>Historial de pagos y abonos (${pagos.length})</span><span>${abierto?"▴":"▾"}</span>
+      </button>
+      ${abierto ? `<div onclick="event.stopPropagation();" style="margin-top:6px;">
+        ${pagos.map(g=>`<div style="display:flex; justify-content:space-between; align-items:center; gap:8px; padding:9px 4px; border-bottom:1px solid var(--line-soft);">
+          <div style="min-width:0;">
+            <div style="font-size:13px; font-weight:600;">${g.abonoCapital ? "💰 " : "💳 "}${esc(g.nota || (g.abonoCapital ? "Abono a capital" : "Pago de deuda"))}</div>
+            <div class="hint" style="margin-top:1px;">${g.fecha ? esc(g.fecha) : esc((g.mes||"")+" "+(g.anio||""))}</div>
+          </div>
+          <div style="display:flex; align-items:center; gap:6px;">
+            <div style="font-family:var(--font-mono); font-size:13px;">${money(g.monto)}</div>
+            <button type="button" class="r-edit" onclick="event.stopPropagation(); ccEditarGastoDeDeuda('${g.id}')" aria-label="Editar" title="Editar">✎</button>
+            ${esPendiente("gasto:"+g.id)
+              ? `<button type="button" class="r-del confirm" onclick="event.stopPropagation(); deleteGasto('${g.id}')">✓ Eliminar</button>`
+              : `<button type="button" class="r-del" onclick="event.stopPropagation(); pideConfirmar('gasto:${g.id}', renderDeudas)" aria-label="Eliminar" title="Eliminar">×</button>`}
+          </div>
+        </div>`).join("")}
+        <div class="hint" style="margin-top:6px;">Borrar o editar un pago le devuelve ese dinero a la deuda.</div>
+      </div>` : ""}`;
+}
 function renderDeudas(){
+  if(typeof renderTopbar==="function") renderTopbar();  // el "Total de deudas" de arriba se actualiza al instante
   if(document.getElementById("existDeudaId")) poblarSelectDeudaExistente();
   const box = document.getElementById("deudasList");
   if(state.deudas.length===0){
@@ -7091,6 +7239,7 @@ function renderDeudas(){
             <div style="font-family:var(--font-mono); font-size:13px;">${money(m.valor)}</div>
           </div>`).join("")}
         </div>` : ""}` : ""}
+        ${ccHtmlHistorialPagosDeuda(d)}
       </div>`;
     }
     const iMensual = (d.tasaAnual||0)/100/12;
@@ -7167,6 +7316,7 @@ function renderDeudas(){
              </div>
            </div>`
         : `<button class="btn-ghost" style="margin-top:0;" onclick="event.stopPropagation(); abonandoDeudaId='${d.id}'; renderDeudas();">💰 Abono a capital</button>`}
+      ${ccHtmlHistorialPagosDeuda(d)}
     </div>`;
   }).join("");
   if(editingDeudaId){
@@ -7711,7 +7861,7 @@ const CONFIG = {
   apiVersion: "https://api.github.com/repos/Yes0702/cuentasclaras/releases/latest",
   urlVersion: "https://github.com/Yes0702/cuentasclaras/releases/latest/download/version.json"
 };
-const APP_VERSION = "9.15";
+const APP_VERSION = "9.16";
 
 /* =====================================================================
    AVISO DE ACTUALIZACIÓN (revisa al abrir la app)
