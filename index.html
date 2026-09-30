@@ -720,7 +720,8 @@
       </button>
     </div>
     <div class="topbar-row">
-      <div class="cc-headbox" id="ccHeadbox">
+      <div class="cc-headbox" id="ccHeadbox" style="position:relative;">
+        <button type="button" id="hbOjo" onclick="event.stopPropagation(); ccAlternarOcultarTotales()" aria-label="Ocultar o mostrar el total" title="Ocultar o mostrar el total" style="display:none; position:absolute; top:6px; right:6px; width:40px; height:40px; border:none; border-radius:12px; background:rgba(255,255,255,.14); color:#fff; align-items:center; justify-content:center; cursor:pointer; padding:0;"><svg id="hbOjoIcono" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"></svg></button>
         <div class="hb-label" id="hbLabel">Ingreso mensual</div>
         <img id="hbLogo" src="icons/breb-logo.png" alt="Bre-B" style="display:none; height:30px; width:auto; background:#fff; padding:4px 8px; border-radius:8px; margin-top:3px;">
         <div class="hb-value" id="topIngreso">$0</div>
@@ -3235,7 +3236,7 @@ let ccVistaActual = "inicio";
 function showView(name){
   // Si sales de Deudas, los formularios de "Nueva deuda"/"Agregar a existente" se
   // cierran solos — así no quedan desplegados la próxima vez que entres a la pestaña.
-  if(name !== "deudas" && typeof modoDeudaFormAbierto !== "undefined") modoDeudaFormAbierto = null;
+  if(name !== "deudas" && typeof ccCerrarFormulariosDeuda === "function") ccCerrarFormulariosDeuda();
   // Lo mismo para el Fondo de emergencia en Ahorros.
   if(name !== "ahorros" && typeof verFondoEmergencia !== "undefined" && verFondoEmergencia){
     verFondoEmergencia = false;
@@ -3281,6 +3282,25 @@ function cambiarAnio(delta){
 /* =====================================================================
    RENDER: TOPBAR
    ===================================================================== */
+/* Ojo del recuadro de arriba: se recuerda en cada celular. */
+function ccTotalesOcultos(){
+  try{ return localStorage.getItem("cc_ocultar_totales") === "1"; }catch(e){ return false; }
+}
+function ccAlternarOcultarTotales(){
+  const ocultar = !ccTotalesOcultos();
+  try{ localStorage.setItem("cc_ocultar_totales", ocultar ? "1" : "0"); }catch(e){}
+  renderTopbar();
+}
+function ccPintarOjo(btn){
+  const icono = btn.querySelector("svg");
+  if(!icono) return;
+  const oculto = ccTotalesOcultos();
+  // Ojo abierto = se está viendo (tócalo para ocultar); ojo tachado = oculto.
+  icono.innerHTML = oculto
+    ? '<path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94"/><path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19"/><path d="M14.12 14.12a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/>'
+    : '<path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/>';
+  btn.setAttribute("aria-label", oculto ? "Mostrar el total" : "Ocultar el total");
+}
 function renderTopbar(){
   const box = document.getElementById("ccHeadbox");
   const lblEl = document.getElementById("hbLabel");
@@ -3297,13 +3317,21 @@ function renderTopbar(){
   if(valEl) valEl.style.display = "";
   if(box){ box.classList.remove("clickable"); box.onclick = null; }
 
+  // Ojo para ocultar el total (solo en Deudas y Gastos). El "disponible" de
+  // Gastos se sigue viendo; solo se tapa el total.
+  const ojo = document.getElementById("hbOjo");
+  const conOjo = ccVistaActual === "deudas" || ccVistaActual === "gastos";
+  if(ojo){ ojo.style.display = conOjo ? "flex" : "none"; ccPintarOjo(ojo); }
+  if(box) box.style.paddingRight = conOjo ? "52px" : "";   // que el número no quede debajo del ojo
+  const oculto = conOjo && ccTotalesOcultos();
+  const CC_TAPADO = "$ ******";
   if(ccVistaActual === "deudas"){
     lblEl.textContent = "Total de deudas";
-    valEl.textContent = money(totalDeuda());
+    valEl.textContent = oculto ? CC_TAPADO : money(totalDeuda());
   } else if(ccVistaActual === "gastos"){
     lblEl.textContent = "Has pagado este mes";
     const gastadoMes = totalRealMes(state.mesActivo, state.anioActivo);
-    valEl.textContent = money(gastadoMes);
+    valEl.textContent = oculto ? CC_TAPADO : money(gastadoMes);
     const saldoAnterior = ccSaldoArrastradoAntesDe(state.mesActivo, state.anioActivo);
     if(arrastreEl && saldoAnterior!==null && Math.round(saldoAnterior)!==0){
       arrastreEl.style.display = "flex";
@@ -6175,8 +6203,21 @@ function ccSetModoDeudaForm(modo){
   document.getElementById("panelDeudaExistente").style.display = mostrarExistente ? "" : "none";
   document.getElementById("btnModoNuevaDeuda").classList.toggle("activo", mostrarNueva);
   document.getElementById("btnModoDeudaExistente").classList.toggle("activo", mostrarExistente);
-  if(mostrarNueva) ccSetTipoNuevaDeuda("normal");
-  if(mostrarExistente){ poblarSelectDeudaExistente(); ccSetTipoMovimiento("compra"); }
+  // Se vuelve a abrir tal como se dejó (lo escrito sigue ahí).
+  if(mostrarNueva) ccSetTipoNuevaDeuda(ccTipoNuevaDeuda);
+  if(mostrarExistente){ poblarSelectDeudaExistente(); ccSetTipoMovimiento(existTipoMovimiento); }
+}
+/* Al salir de Deudas los dos formularios se esconden y quedan solo los dos
+   botones. Lo que ya se había escrito NO se borra: al volver a tocar el botón
+   aparece tal cual. */
+function ccCerrarFormulariosDeuda(){
+  modoDeudaFormAbierto = null;
+  const pN = document.getElementById("panelNuevaDeuda"), pE = document.getElementById("panelDeudaExistente");
+  if(pN) pN.style.display = "none";
+  if(pE) pE.style.display = "none";
+  const bN = document.getElementById("btnModoNuevaDeuda"), bE = document.getElementById("btnModoDeudaExistente");
+  if(bN) bN.classList.remove("activo");
+  if(bE) bE.classList.remove("activo");
 }
 
 /* Tipo de deuda al crearla desde cero: normal, o directamente un avance en efectivo
@@ -9144,6 +9185,14 @@ function ccMostrarAyudaSiListo(){
     return;
   }
   ccAyudaMostrada = true;
+  // Para no ser invasivo: sale solo la PRIMERA vez que se abre la app en la
+  // mañana (antes de las 12 m.) y la primera vez en la tarde/noche.
+  const ahora = new Date();
+  const turno = ahora.getFullYear() + "-" + (ahora.getMonth()+1) + "-" + ahora.getDate() + (ahora.getHours() < 12 ? "-manana" : "-tarde");
+  let ultimo = null;
+  try{ ultimo = localStorage.getItem("cc_ayuda_turno"); }catch(e){}
+  if(ultimo === turno) return;
+  try{ localStorage.setItem("cc_ayuda_turno", turno); }catch(e){}
   const el = document.getElementById("ccAyuda");
   if(el) el.style.display = "flex";
 }
