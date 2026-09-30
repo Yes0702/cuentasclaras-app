@@ -575,7 +575,7 @@
     INICIEMOS →
   </button>
   <div style="font-size:12px; opacity:.75; margin-top:18px; max-width:280px;">
-    Todo se guarda solo en tu celular. Nadie más ve tus datos.
+    Tus datos se guardan en tu celular y nadie más los ve. Si activas el Círculo familiar en la nube, también se guardan de forma segura para compartirlos solo con tu hogar.
   </div>
   <div style="font-size:12.5px; opacity:.8; margin-top:22px; max-width:300px; line-height:1.5; font-style:italic; border-top:1px solid rgba(255,255,255,.2); padding-top:18px;">
     "Porque ¿quién de ustedes que quiera levantar una torre, no se sienta primero a calcular los costos, para ver si tiene todo lo que necesita?"<br>
@@ -1452,7 +1452,7 @@
         <div class="s-txt" style="margin-bottom:6px;">¿Qué te gustaría que mejorara?</div>
         <div class="hint" style="margin-bottom:12px;">Cuéntame qué te sirve y qué te falta. Cada mensaje ayuda a decidir qué construir después.</div>
         <button class="btn-primary" style="margin-top:0;" onclick="abrirWhatsApp()">💬 Escribir por WhatsApp</button>
-        <div class="hint" style="margin-top:10px;">Se abre WhatsApp con un mensaje listo. <b>No se envía ningún dato tuyo:</b> tus gastos nunca salen del celular.</div>
+        <div class="hint" style="margin-top:10px;">Se abre WhatsApp con un mensaje listo. <b>No se envía ningún dato tuyo:</b> tus gastos e ingresos no van en el mensaje.</div>
       </div>
 
       <h2 class="section-title">Tu hogar<div class="rule"></div></h2>
@@ -1490,6 +1490,7 @@
         </div>
 
         <button class="btn-ghost" style="width:100%; margin-top:14px;" onclick="ccCerrarSesionFamiliar()">Cerrar sesión de la nube</button>
+        <button class="btn-ghost" style="width:100%; margin-top:8px; color:var(--red);" onclick="window.ccEliminarMiCuenta ? ccEliminarMiCuenta() : toast('Conéctate a internet para administrar tu cuenta')">Eliminar mi cuenta de la nube</button>
       </div>
 
       <div id="bloqueDonacion"></div>
@@ -1537,7 +1538,7 @@
 
       <h2 class="section-title">Acerca de<div class="rule"></div></h2>
       <div class="card">
-        <div class="hint">Cuentas Claras <span id="ccVerAcerca"></span>· Todo se guarda solo en este dispositivo. Exporta un respaldo de vez en cuando para no perder tu historial.</div>
+        <div class="hint">Cuentas Claras <span id="ccVerAcerca"></span>· Sin la nube, todo se guarda solo en este dispositivo: exporta un respaldo de vez en cuando para no perder tu historial. Con el Círculo familiar, tus datos también quedan sincronizados en la nube con tu hogar.</div>
         <button class="btn-outline" style="width:100%; margin-top:12px;" onclick="ccChequearActualizacion(true)">🔄 Buscar actualización</button>
       </div>
     </section>
@@ -7326,7 +7327,7 @@ function proximaGlobal(desde){
    ===================================================================== */
 const CONFIG = {
   // Tu WhatsApp con indicativo, solo números. Colombia = 57.
-  whatsapp: "573112070146",
+  whatsapp: "573127352221",
 
   // Donaciones. Vacía las que no uses.
   nequi:   "",                  // Nequi desactivado (solo Bre-B)
@@ -9518,7 +9519,9 @@ if(typeof supabase !== "undefined"){
               + '<button class="switch ' + (puedeVerIngresos ? 'on' : '') + '" style="flex:0 0 auto;" '
               + 'onclick="ccCambiarPermiso(\'' + ccIdSeguro(m.user_id) + '\',\'ver_ingresos\',' + (puedeVerIngresos ? 'false' : 'true') + ')" '
               + 'aria-label="Puede ver ingresos"></button>'
-            + '</div>')
+            + '</div>'
+            + '<button class="btn-ghost" style="width:100%; margin-top:8px; font-size:13px;" '
+            + 'onclick="ccTransferirAdmin(\'' + ccIdSeguro(m.user_id) + '\')">👑 Hacer administrador</button>')
         + '</div>';
     }).join("") || '<div class="hint">Todavía no hay nadie más en tu hogar.</div>';
 
@@ -9585,6 +9588,64 @@ if(typeof supabase !== "undefined"){
     ccCargarMiembros();
   };
 
+  /* ---- Pasar la administración del hogar a otro integrante ----
+     Es obligatorio antes de que el administrador elimine su cuenta si hay
+     más gente en el hogar, para que nadie se quede sin su hogar por sorpresa. ---- */
+  window.ccTransferirAdmin = async function(userId){
+    const ok = await ccConfirmAsync("¿Pasar la administración del hogar a esta persona?\n\nPodrá invitar gente, cambiar permisos y administrar el hogar. Tú quedas como integrante, con acceso completo.");
+    if(!ok) return;
+    try{
+      const { error } = await sbFamiliar.rpc("transferir_administracion", { nuevo_admin: userId });
+      if(error){ toast("No se pudo pasar la administración: " + error.message); return; }
+    }catch(e){ toast("Sin conexión — no se cambió nada. Intenta de nuevo."); return; }
+    toast("Listo: esa persona ahora administra el hogar");
+    setTimeout(()=>{ location.reload(); }, 1500);
+  };
+
+  /* ---- Eliminar mi cuenta de la nube (lo exige Google Play) ----
+     Integrante: sale del hogar y se borra su cuenta; el hogar sigue para los
+     demás. Administrador: si hay más gente, primero debe pasar la
+     administración; si está solo, se borra también su hogar en la nube.
+     En todos los casos, lo guardado en este celular se queda. ---- */
+  window.ccEliminarMiCuenta = async function(){
+    if(!ccHogarId){ toast("No hay una cuenta de la nube conectada aquí."); return; }
+    if(!navigator.onLine){ toast("Necesitas internet para eliminar tu cuenta."); return; }
+    if(ccEsAdmin){
+      let otros = 0;
+      try{
+        const { data, error } = await sbFamiliar.rpc("obtener_miembros_hogar");
+        if(error) throw error;
+        otros = (data || []).filter(function(m){ return !m.es_yo; }).length;
+      }catch(e){ toast("No se pudo revisar tu hogar. Intenta de nuevo con buena conexión."); return; }
+      if(otros > 0){
+        const ir = await ccConfirmAsync("Antes de eliminar tu cuenta, pasa la administración del hogar a otro integrante: en la lista de tu hogar, toca «👑 Hacer administrador» junto a su correo.\n\n¿Ir a la lista?");
+        if(ir){ const lista = document.getElementById("ccListaMiembros"); if(lista) lista.scrollIntoView({ behavior:"smooth", block:"start" }); }
+        return;
+      }
+    }
+    const mensaje = ccEsAdmin
+      ? "¿Eliminar tu cuenta de la nube?\n\nSe borran tu correo y los datos de tu hogar en la nube (eres el único integrante).\n\nEn este celular te quedan todos tus datos y la app sigue funcionando sin nube.\n\nEsto no se puede deshacer."
+      : "¿Eliminar tu cuenta de la nube?\n\nSe borra tu correo y sales del hogar. Los datos del hogar siguen en la nube para los demás integrantes.\n\nEn este celular te queda una copia de los datos para seguir usando la app sin nube.\n\nEsto no se puede deshacer.";
+    if(!(await ccConfirmAsync(mensaje))) return;
+    if(!(await ccConfirmAsync("Última confirmación: ¿de verdad quieres eliminar tu cuenta de la nube?"))) return;
+    try{
+      const { error } = await sbFamiliar.rpc("eliminar_mi_cuenta");
+      if(error){ toast("No se pudo eliminar: " + error.message); return; }
+    }catch(e){ toast("Sin conexión — no se eliminó nada. Intenta de nuevo."); return; }
+    // La cuenta ya no existe: se cierra la sesión solo en este celular (sin
+    // red) y los datos que quedan aquí pasan a ser datos locales normales,
+    // sin marca de hogar — la app sigue funcionando sin nube.
+    const hogarAnterior = ccHogarId;
+    try{ await sbFamiliar.auth.signOut({ scope: "local" }); }catch(e){}
+    try{
+      localStorage.removeItem("cc_nube_ya_conectado_" + hogarAnterior);
+      localStorage.removeItem("cc_subida_pendiente_" + hogarAnterior);
+      localStorage.removeItem(CC_CLAVE_HOGAR_DATOS);
+    }catch(e){}
+    await window.ccCerrarSesionFamiliar();
+    ccMostrarBannerSync("Tu cuenta de la nube se eliminó. Tus datos siguen guardados en este celular.", "#4A5A50", true);
+  };
+
   /* ---- Permisos que el administrador le dio a este integrante ----
      "editar", "ver_deudas" y "ver_ingresos" ausentes se toman como true (así
      nadie pierde acceso por un hogar creado antes de que existieran). El
@@ -9610,7 +9671,8 @@ if(typeof supabase !== "undefined"){
   }
 
   window.ccCerrarSesionFamiliar = async function(){
-    await sbFamiliar.auth.signOut();
+    // Aunque falle la red, la sesión se cierra igual en este celular.
+    try{ await sbFamiliar.auth.signOut(); }catch(e){ try{ await sbFamiliar.auth.signOut({ scope: "local" }); }catch(e2){} }
     ccDesactivarSyncSaveState();
     ccDesactivarRealtime();
     ccUserId = null; ccHogarId = null; ccEsAdmin = false;
