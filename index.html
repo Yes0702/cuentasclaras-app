@@ -3317,10 +3317,11 @@ function renderTopbar(){
   if(valEl) valEl.style.display = "";
   if(box){ box.classList.remove("clickable"); box.onclick = null; }
 
-  // Ojo para ocultar el total (solo en Deudas y Gastos). El "disponible" de
-  // Gastos se sigue viendo; solo se tapa el total.
+  // Ojo para ocultar el total (Deudas, Gastos y el ingreso en Presupuesto). El
+  // "disponible" de Gastos se sigue viendo; solo se tapa el total.
   const ojo = document.getElementById("hbOjo");
-  const conOjo = ccVistaActual === "deudas" || ccVistaActual === "gastos";
+  const conOjo = ccVistaActual === "deudas" || ccVistaActual === "gastos" ||
+    (ccVistaActual === "presupuesto" && window.ccPuedeVerIngresos !== false);
   if(ojo){ ojo.style.display = conOjo ? "flex" : "none"; ccPintarOjo(ojo); }
   if(box) box.style.paddingRight = conOjo ? "52px" : "";   // que el número no quede debajo del ojo
   const oculto = conOjo && ccTotalesOcultos();
@@ -3385,7 +3386,7 @@ function renderTopbar(){
   } else {
     // Presupuesto: ingreso editable
     lblEl.textContent = "Ingreso mensual";
-    valEl.textContent = money(state.ingreso);
+    valEl.textContent = oculto ? CC_TAPADO : money(state.ingreso);
     if(topEj && ccVistaActual==="presupuesto"){
       topEj.style.display = (state.ingresoPrincipal && state.ingresoPrincipal.esEjemplo) ? "block" : "none";
     }
