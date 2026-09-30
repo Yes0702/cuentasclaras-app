@@ -2175,10 +2175,9 @@ function ccReenlazarPagosDeDeuda(gastos, deudas){
 
 /* =====================================================================
    COMPARAR Y UNIR DOS VERSIONES DE LOS DATOS (este celular vs la nube)
-   Se usa cuando las dos cambiaron por su lado y no se sabe cuál dejar:
-   en vez de adivinar, se compara dato por dato. Cada gasto, deuda, meta,
-   ingreso extra, inversión y aporte al fondo tiene un id único; los rubros
-   se reconocen por su nombre.
+   Cada gasto, deuda, meta, ingreso extra, inversión y aporte al fondo tiene
+   un id único; los rubros se reconocen por su nombre (que no se puede
+   repetir) y el ingreso principal por mes, por su mes.
    ===================================================================== */
 function ccJSONEstable(v){
   // JSON con las claves siempre en el mismo orden, para comparar sin falsos "distintos"
@@ -2196,20 +2195,30 @@ function ccHashTexto(s){
   return (h>>>0).toString(16) + ":" + s.length;
 }
 const CC_GRUPOS_SYNC = [
-  { tipo:"gastos",              clave:"id",     lista: s=> s.gastos },
-  { tipo:"deudas",              clave:"id",     lista: s=> s.deudas },
-  { tipo:"metas",               clave:"id",     lista: s=> s.metas },
-  { tipo:"ingresosOcasionales", clave:"id",     lista: s=> s.ingresosOcasionales },
-  { tipo:"inversiones",         clave:"id",     lista: s=> s.inversiones },
-  { tipo:"rubros",              clave:"nombre", lista: s=> s.rubros },
-  { tipo:"historialFE",         clave:"id",     lista: s=> (s.fondoEmergencia||{}).historial }
+  { tipo:"gastos",              clave:"id",     lista: s=> s.gastos,              escribir: (s,a)=>{ s.gastos = a; } },
+  { tipo:"deudas",              clave:"id",     lista: s=> s.deudas,              escribir: (s,a)=>{ s.deudas = a; } },
+  { tipo:"metas",               clave:"id",     lista: s=> s.metas,               escribir: (s,a)=>{ s.metas = a; } },
+  { tipo:"ingresosOcasionales", clave:"id",     lista: s=> s.ingresosOcasionales, escribir: (s,a)=>{ s.ingresosOcasionales = a; } },
+  { tipo:"inversiones",         clave:"id",     lista: s=> s.inversiones,         escribir: (s,a)=>{ s.inversiones = a; } },
+  { tipo:"rubros",              clave:"nombre", lista: s=> s.rubros,              escribir: (s,a)=>{ s.rubros = a; } },
+  { tipo:"historialFE",         clave:"id",
+    lista: s=> (s.fondoEmergencia||{}).historial,
+    escribir: (s,a)=>{ s.fondoEmergencia = s.fondoEmergencia || {}; s.fondoEmergencia.historial = a; } },
+  // Ingreso principal guardado mes por mes: cada mes se une por separado.
+  { tipo:"ingresoMes",          clave:"__mes",
+    lista: s=> Object.keys(s.ingresoPrincipalPorMes || {}).map(k=> Object.assign({ __mes:k }, s.ingresoPrincipalPorMes[k])),
+    escribir: (s,a)=>{ const o = {}; a.forEach(x=>{ const v = Object.assign({}, x); const k = v.__mes; delete v.__mes; o[k] = v; }); s.ingresoPrincipalPorMes = o; } }
 ];
+function ccGrupoSync(tipo){ return CC_GRUPOS_SYNC.find(g=> g.tipo === tipo); }
+// Con historial por mes, "ingresoPrincipal" es solo lo que se calcula para el
+// mes que se está mirando (cambia en cada celular): no se compara ni se une.
+function ccUsaHistorialIngreso(s){ return Object.keys((s && s.ingresoPrincipalPorMes) || {}).length > 0; }
 function ccConfigFondo(s){
   const f = s.fondoEmergencia || {};
   return { meses: f.meses, ahorrado: f.ahorrado, aporteMensual: f.aporteMensual, tasaAnual: f.tasaAnual };
 }
 function ccDatosIngreso(s){
-  return { ingresoPrincipal: s.ingresoPrincipal || null, ingresoPrincipalPorMes: s.ingresoPrincipalPorMes || {} };
+  return { ingresoPrincipal: s.ingresoPrincipal || null };
 }
 function ccEtiquetaItemSync(tipo, x){
   x = x || {};
@@ -2221,12 +2230,16 @@ function ccEtiquetaItemSync(tipo, x){
     case "inversiones": return "Inversión: " + (x.nombre||"") + " — " + money(x.monto);
     case "rubros": return "Rubro: " + (x.nombre||"") + (x.modo === "valor" ? " — " + money(x.valor) : (x.pct ? " — " + x.pct + "%" : ""));
     case "historialFE": return "Aporte al fondo de emergencia: " + money(x.monto) + " (" + (x.fecha||"") + ")";
+    case "ingresoMes": {
+      const k = Number(x.__mes) || 0;
+      return "Ingreso principal de " + (MESES[(k % 100) - 1] || "") + " " + Math.floor(k / 100) + ": " + money(x.monto);
+    }
     case "ingreso": return "Ingreso principal: " + money(x.ingresoPrincipal && x.ingresoPrincipal.monto);
     case "fondo": return "Fondo de emergencia: ahorrado " + money(x.ahorrado) + " · aporte " + money(x.aporteMensual) + "/mes";
   }
   return tipo;
 }
-/* Devuelve { soloCelular:[], soloNube:[], cambiados:[], total } */
+/* Devuelve { soloCelular:[], soloNube:[], cambiados:[], total } (sin memoria) */
 function ccCompararEstados(local, nube){
   const r = { soloCelular: [], soloNube: [], cambiados: [], total: 0 };
   CC_GRUPOS_SYNC.forEach(g=>{
@@ -2240,13 +2253,140 @@ function ccCompararEstados(local, nube){
     });
     enNube.forEach((y, k)=>{ if(!enCelular.has(k)) r.soloNube.push({ tipo:g.tipo, clave:k, item:y }); });
   });
-  const ingA = ccDatosIngreso(local), ingB = ccDatosIngreso(nube);
-  if(ccJSONEstable(ingA) !== ccJSONEstable(ingB)) r.cambiados.push({ tipo:"ingreso", clave:"ingreso", celular:ingA, nube:ingB });
+  if(!ccUsaHistorialIngreso(local) && !ccUsaHistorialIngreso(nube)){
+    const ingA = ccDatosIngreso(local), ingB = ccDatosIngreso(nube);
+    if(ccJSONEstable(ingA) !== ccJSONEstable(ingB)) r.cambiados.push({ tipo:"ingreso", clave:"ingreso", celular:ingA, nube:ingB });
+  }
   const feA = ccConfigFondo(local), feB = ccConfigFondo(nube);
   if(ccJSONEstable(feA) !== ccJSONEstable(feB)) r.cambiados.push({ tipo:"fondo", clave:"fondo", celular:feA, nube:feB });
   r.total = r.soloCelular.length + r.soloNube.length + r.cambiados.length;
   return r;
 }
+
+/* Huella de lo que se sincroniza (sin lo que es propio de cada celular), sin
+   importar el orden: dos estados con la misma huella no tienen nada distinto
+   que subir. Es mucho más rápida que comparar dato por dato. */
+function ccHuellaSync(s){
+  const o = {};
+  CC_GRUPOS_SYNC.forEach(g=>{
+    o[g.tipo] = (g.lista(s) || []).map(x=> [String(x && x[g.clave]), ccJSONEstable(x)])
+      .sort((a, b)=> a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : (a[1] < b[1] ? -1 : a[1] > b[1] ? 1 : 0))
+      .map(p=> p[1]).join("\n");
+  });
+  o.fondo = ccJSONEstable(ccConfigFondo(s));
+  if(!ccUsaHistorialIngreso(s)) o.ingreso = ccJSONEstable(ccDatosIngreso(s));
+  return JSON.stringify(o);
+}
+
+/* ---- Unir un mismo dato que cambiaron los DOS lados, campo por campo ----
+   - Si cada lado cambió campos distintos, se toman los dos cambios.
+   - Los acumulados (saldo, interés pagado, cuotas pagadas, lo ahorrado...) se
+     suman: nube + (lo que cambió este celular). Así dos pagos a la misma
+     deuda hechos en dos celulares quedan los dos.
+   - Las listas con id (movimientos de una deuda) se unen por id; las listas
+     sin id (abonos a capital) se unen si los dos solo agregaron al final.
+   - Si los dos cambiaron el mismo campo de otra forma, no se puede unir solo. */
+const CC_CAMPOS_ACUMULADOS = new Set(["saldo","interesPagado","interesAcumuladoNoPagado","cuotasPagadas","ahorrado","interesGenerado"]);
+const CC_CAMPOS_DERIVADOS = new Set(["activo","pago","fechaPagada","fechaUltimoCalculo"]);
+function ccUnirValor3(b, l, c, campo){
+  const J = ccJSONEstable;
+  if(J(l) === J(c)) return { ok:true, v:l };
+  if(J(l) === J(b)) return { ok:true, v:c };
+  if(J(c) === J(b)) return { ok:true, v:l };
+  if(campo && CC_CAMPOS_ACUMULADOS.has(campo) && typeof l === "number" && typeof c === "number" && typeof b === "number"){
+    return { ok:true, v: Math.round((c + (l - b)) * 100) / 100 };
+  }
+  if(campo && CC_CAMPOS_DERIVADOS.has(campo)){
+    // Se recalculan después de unir; mientras tanto se deja el más reciente/no vacío.
+    if(campo === "fechaUltimoCalculo") return { ok:true, v: String(l||"") > String(c||"") ? l : c };
+    return { ok:true, v: (c !== undefined && c !== null) ? c : l };
+  }
+  if(Array.isArray(l) && Array.isArray(c)){
+    const bb = Array.isArray(b) ? b : [];
+    const conId = arr=> arr.every(x=> x && typeof x === "object" && x.id != null);
+    if(conId(l) && conId(c) && conId(bb)){
+      const B = new Map(bb.map(x=> [String(x.id), x])), L = new Map(l.map(x=> [String(x.id), x])), C = new Map(c.map(x=> [String(x.id), x]));
+      const salida = [];
+      const claves = [...C.keys(), ...[...L.keys()].filter(k=> !C.has(k))];
+      for(const k of claves){
+        const xb = B.get(k), xl = L.get(k), xc = C.get(k);
+        if(xl && xc){
+          if(!xb && J(xl) !== J(xc)) return { ok:false };
+          const r = xb ? ccUnirValor3(xb, xl, xc, null) : { ok:true, v:xc };
+          if(!r.ok) return r;
+          salida.push(r.v);
+        } else if(xl){
+          if(!xb) salida.push(xl); else if(J(xl) !== J(xb)) return { ok:false };
+        } else {
+          if(!xb) salida.push(xc); else if(J(xc) !== J(xb)) return { ok:false };
+        }
+      }
+      return { ok:true, v:salida };
+    }
+    const esPrefijo = (p, a)=> p.length <= a.length && p.every((x, i)=> J(x) === J(a[i]));
+    if(esPrefijo(bb, l) && esPrefijo(bb, c)) return { ok:true, v: c.concat(l.slice(bb.length)) };
+    return { ok:false };
+  }
+  if(l && c && typeof l === "object" && typeof c === "object" && !Array.isArray(l) && !Array.isArray(c)){
+    const bb = (b && typeof b === "object" && !Array.isArray(b)) ? b : {};
+    const out = {};
+    const claves = new Set([...Object.keys(c), ...Object.keys(l)]);
+    for(const k of claves){
+      const r = ccUnirValor3(bb[k], l[k], c[k], k);
+      if(!r.ok) return r;
+      if(r.v !== undefined) out[k] = r.v;
+    }
+    return { ok:true, v:out };
+  }
+  return { ok:false };
+}
+
+/* Después de unir: lo que se calcula a partir de otros datos se deja coherente. */
+function ccNormalizarTrasUnir(r){
+  (r.deudas || []).forEach(d=>{
+    (d.movimientos || []).forEach(m=>{
+      if(typeof m.saldo === "number"){ m.saldo = Math.max(0, Math.round(m.saldo)); m.activo = m.saldo > 0; }
+      if(m.cuotas > 0 && typeof m.cuotasPagadas === "number") m.cuotasPagadas = Math.max(0, Math.min(m.cuotas, m.cuotasPagadas));
+    });
+    if(typeof d.interesAcumuladoNoPagado === "number") d.interesAcumuladoNoPagado = Math.max(0, d.interesAcumuladoNoPagado);
+    if(typeof d.interesPagado === "number") d.interesPagado = Math.max(0, d.interesPagado);
+  });
+  (r.metas || []).forEach(m=>{ if(typeof m.ahorrado === "number") m.ahorrado = Math.max(0, m.ahorrado); });
+  if(r.fondoEmergencia && typeof r.fondoEmergencia.ahorrado === "number") r.fondoEmergencia.ahorrado = Math.max(0, r.fondoEmergencia.ahorrado);
+  // Un mismo gasto fijo marcado como pagado en dos celulares queda una sola vez.
+  const vistos = new Set();
+  r.gastos = (r.gastos || []).filter(g=>{
+    if(!g || !g.origenFijo) return true;
+    const k = g.origenFijo + "|" + g.mes + "|" + g.anio;
+    if(vistos.has(k)) return false;
+    vistos.add(k); return true;
+  });
+  return r;
+}
+
+/* Rubros renombrados en un lado: los gastos que el otro lado agregó con el
+   nombre viejo pasan al nombre nuevo. Devuelve { viejo: nuevo }. */
+function ccRenombresDeRubros(base, lado){
+  const enBase = new Set((base.rubros || []).map(r=> r.nombre));
+  const enLado = new Set((lado.rubros || []).map(r=> r.nombre));
+  const quitados = [...enBase].filter(n=> !enLado.has(n));
+  const agregados = new Set([...enLado].filter(n=> !enBase.has(n)));
+  const gastosLado = new Map((lado.gastos || []).map(g=> [g.id, g]));
+  const mapa = {};
+  quitados.forEach(viejo=>{
+    const destinos = new Set();
+    (base.gastos || []).filter(g=> g.rubro === viejo).forEach(g=>{
+      const ahora = gastosLado.get(g.id);
+      if(ahora) destinos.add(ahora.rubro);
+    });
+    if(destinos.size === 1){
+      const nuevo = [...destinos][0];
+      if(agregados.has(nuevo)) mapa[viejo] = nuevo;
+    }
+  });
+  return mapa;
+}
+
 /* "Unir" sin memoria (no hay base): parte de lo que hay en la nube; de lo que
    solo está en este celular se suma lo que se marcó para conservar; de lo que
    solo está en la nube se quita lo que se desmarcó; y en lo que cambió en los
@@ -2258,21 +2398,20 @@ function ccUnirEstados(local, nube, diff, eleccion){
   const e = eleccion || {};
   const r = copia(nube);
   r.mesActivo = local.mesActivo; r.anioActivo = local.anioActivo;
-  ["gastos","deudas","metas","ingresosOcasionales","inversiones","rubros"].forEach(k=>{ if(!Array.isArray(r[k])) r[k] = []; });
   r.fondoEmergencia = r.fondoEmergencia || {};
-  if(!Array.isArray(r.fondoEmergencia.historial)) r.fondoEmergencia.historial = [];
-  const lista = tipo=> CC_GRUPOS_SYNC.find(g=> g.tipo === tipo).lista(r);
   const clave = d=> d.tipo + "|" + d.clave;
-  diff.soloCelular.forEach(d=>{
-    if(e.conservarCelular && e.conservarCelular[clave(d)] === false) return;
-    lista(d.tipo).push(copia(d.item));
-  });
-  diff.soloNube.forEach(d=>{
-    if(!(e.conservarNube && e.conservarNube[clave(d)] === false)) return;
-    const g = CC_GRUPOS_SYNC.find(g=> g.tipo === d.tipo);
-    const arr = lista(d.tipo);
-    const i = arr.findIndex(x=> String(x[g.clave]) === d.clave);
-    if(i >= 0) arr.splice(i, 1);
+  CC_GRUPOS_SYNC.forEach(g=>{
+    const arr = (g.lista(r) || []).slice();
+    diff.soloCelular.filter(d=> d.tipo === g.tipo).forEach(d=>{
+      if(e.conservarCelular && e.conservarCelular[clave(d)] === false) return;
+      arr.push(copia(d.item));
+    });
+    diff.soloNube.filter(d=> d.tipo === g.tipo).forEach(d=>{
+      if(!(e.conservarNube && e.conservarNube[clave(d)] === false)) return;
+      const i = arr.findIndex(x=> String(x[g.clave]) === d.clave);
+      if(i >= 0) arr.splice(i, 1);
+    });
+    g.escribir(r, arr);
   });
   ccAplicarElecciones(r, diff.cambiados, Object.assign({}, e.elecciones), "celular");
   return r;
@@ -2286,23 +2425,25 @@ function ccAplicarElecciones(r, cambiados, elecciones, porDefecto){
   (cambiados || []).forEach(d=>{
     const elegido = (elecciones && elecciones[d.tipo + "|" + d.clave]) || porDefecto || "nube";
     if(elegido !== "celular") return;
-    if(d.tipo === "ingreso"){ if(d.celular){ r.ingresoPrincipal = copia(d.celular.ingresoPrincipal); r.ingresoPrincipalPorMes = copia(d.celular.ingresoPrincipalPorMes); } return; }
+    if(d.tipo === "ingreso"){ if(d.celular) r.ingresoPrincipal = copia(d.celular.ingresoPrincipal); return; }
     if(d.tipo === "fondo"){ if(d.celular){ r.fondoEmergencia = r.fondoEmergencia || {}; Object.assign(r.fondoEmergencia, copia(d.celular)); } return; }
-    const g = CC_GRUPOS_SYNC.find(g=> g.tipo === d.tipo);
-    const arr = g.lista(r);
+    const g = ccGrupoSync(d.tipo);
+    const arr = (g.lista(r) || []).slice();
     const i = arr.findIndex(x=> String(x[g.clave]) === d.clave);
     if(d.celular == null){ if(i >= 0) arr.splice(i, 1); }
     else if(i >= 0) arr[i] = copia(d.celular);
     else arr.push(copia(d.celular));
+    g.escribir(r, arr);
   });
-  return r;
+  return ccNormalizarTrasUnir(r);
 }
 
 /* "Unir" CON memoria: base = cómo estaban los datos la última vez que este
    celular y la nube quedaron iguales. Para cada dato:
    - si solo cambió un lado (se agregó, editó o borró), se toma ese lado;
-   - si los dos lo cambiaron distinto, queda como "conflicto" (por ahora con
-     la versión de la nube) para que la persona elija.
+   - si los dos lo cambiaron, se intenta unir campo por campo (ccUnirValor3);
+   - si aun así no se puede, queda como "conflicto" (por ahora con la versión
+     de la nube) para que la persona elija.
    Devuelve { estado, conflictos:[{ tipo, clave, celular, nube }] } (un lado en
    null = ese lado lo borró). */
 function ccUnir3(base, local, nube){
@@ -2323,7 +2464,11 @@ function ccUnir3(base, local, nube){
       if(l && c){
         if(igual(l, c) || (b && igual(l, b))) v = c;           // igual, o solo cambió la nube
         else if(b && igual(c, b)) v = l;                       // solo cambió este celular
-        else { conflictos.push({ tipo:g.tipo, clave:k, celular:l, nube:c }); v = c; }
+        else {
+          const u = b ? ccUnirValor3(b, l, c, null) : { ok:false };
+          if(u.ok) v = u.v;                                    // cambiaron campos distintos / acumulados
+          else { conflictos.push({ tipo:g.tipo, clave:k, celular:l, nube:c }); v = c; }
+        }
       } else if(l){
         if(!b) v = l;                                          // lo agregó este celular
         else if(igual(l, b)) v = undefined;                    // lo borraron en la nube
@@ -2335,20 +2480,32 @@ function ccUnir3(base, local, nube){
       }
       if(v !== undefined) salida.push(copia(v));
     });
-    if(g.tipo === "historialFE") r.fondoEmergencia.historial = salida;
-    else r[g.tipo] = salida;
+    g.escribir(r, salida);
   });
-  [["ingreso", ccDatosIngreso], ["fondo", ccConfigFondo]].forEach(([tipo, leer])=>{
+  const escalares = [["fondo", ccConfigFondo]];
+  if(!ccUsaHistorialIngreso(base) && !ccUsaHistorialIngreso(local) && !ccUsaHistorialIngreso(nube)) escalares.push(["ingreso", ccDatosIngreso]);
+  escalares.forEach(([tipo, leer])=>{
     const b = leer(base), l = leer(local), c = leer(nube);
+    let v;
     if(igual(l, c) || igual(l, b)) return;                     // queda lo de la nube
-    if(igual(c, b)){                                           // solo cambió este celular
-      if(tipo === "ingreso"){ r.ingresoPrincipal = copia(l.ingresoPrincipal); r.ingresoPrincipalPorMes = copia(l.ingresoPrincipalPorMes); }
-      else Object.assign(r.fondoEmergencia, copia(l));
-      return;
+    if(igual(c, b)) v = l;                                     // solo cambió este celular
+    else {
+      const u = ccUnirValor3(b, l, c, null);
+      if(!u.ok){ conflictos.push({ tipo, clave:tipo, celular:l, nube:c }); return; }
+      v = u.v;
     }
-    conflictos.push({ tipo, clave:tipo, celular:l, nube:c });
+    if(tipo === "ingreso") r.ingresoPrincipal = copia(v.ingresoPrincipal);
+    else Object.assign(r.fondoEmergencia, copia(v));
   });
-  return { estado: r, conflictos };
+  // Rubros renombrados en un lado mientras el otro agregaba gastos con el nombre viejo.
+  const renombres = Object.assign({}, ccRenombresDeRubros(base, nube), ccRenombresDeRubros(base, local));
+  if(Object.keys(renombres).length){
+    (r.gastos || []).forEach(g=>{
+      if(renombres[g.rubro]) g.rubro = renombres[g.rubro];
+      if(g.origenFijo && renombres[g.origenFijo]) g.origenFijo = renombres[g.origenFijo];
+    });
+  }
+  return { estado: ccNormalizarTrasUnir(r), conflictos };
 }
 
 let state = loadState();
@@ -2410,7 +2567,7 @@ function hidratar(parsed, base){
     .filter(i=> i.mes===s.mesActivo && i.anio===s.anioActivo)
     .reduce((sum,i)=> sum + (i.monto||0), 0);
 
-  s.rubros = (Array.isArray(s.rubros) && s.rubros.length ? s.rubros : base.rubros).map(r=>normalizarRubro(r, s.ingreso));
+  s.rubros = ccRubrosSinNombresRepetidos((Array.isArray(s.rubros) && s.rubros.length ? s.rubros : base.rubros).map(r=>normalizarRubro(r, s.ingreso)));
   s.gastos = (s.gastos||[]).map(normalizarGasto);
   s.deudas = (s.deudas||[]).map(d=>{
     d.fecha = d.fecha||"";
@@ -4351,6 +4508,23 @@ function onEditModoChange(idx){
   if(hintEl) hintEl.textContent = ccTextoAyudaModo(modo);
 }
 
+/* Cada rubro se reconoce por su nombre (así se sincroniza entre celulares):
+   no puede haber dos con el mismo nombre (sin importar mayúsculas). */
+function ccRubroNombreRepetido(nombre, idxPropio){
+  const n = String(nombre||"").trim().toLowerCase();
+  return state.rubros.some((r, i)=> i !== idxPropio && String(r.nombre||"").trim().toLowerCase() === n);
+}
+function ccRubrosSinNombresRepetidos(rubros){
+  const usados = new Set();
+  return rubros.map(r=>{
+    if(!usados.has(r.nombre)){ usados.add(r.nombre); return r; }
+    let k = 2;
+    while(usados.has(r.nombre + " (" + k + ")")) k++;
+    const nuevo = Object.assign({}, r, { nombre: r.nombre + " (" + k + ")" });
+    usados.add(nuevo.nombre);
+    return nuevo;
+  });
+}
 function saveRubroEdit(idx){
   if(!ccPuedeEditarCheck()) return;
   const nombre = document.getElementById("editNombre_"+idx).value.trim();
@@ -4362,6 +4536,7 @@ function saveRubroEdit(idx){
   const iconoEl = document.getElementById("editIcono_"+idx);
   const icono = iconoEl ? iconoEl.value : "";
   if(!nombre){ toast("El rubro necesita un nombre."); return; }
+  if(ccRubroNombreRepetido(nombre, idx)){ toast("Ya existe un rubro con ese nombre."); return; }
   const oldNombre = state.rubros[idx].nombre;
   state.rubros[idx] = {
     nombre, tipo, prioridad, modo,
@@ -4370,7 +4545,10 @@ function saveRubroEdit(idx){
     diaPago, icono
   };
   if(oldNombre !== nombre){
-    state.gastos.forEach(g=>{ if(g.rubro===oldNombre) g.rubro = nombre; });
+    state.gastos.forEach(g=>{
+      if(g.rubro===oldNombre) g.rubro = nombre;
+      if(g.origenFijo===oldNombre) g.origenFijo = nombre;
+    });
     Object.keys(chartState).forEach(k=>{ if(chartState[k].rubro===oldNombre) chartState[k].rubro = nombre; });
   }
   editingRubroIdx = null;
@@ -4422,6 +4600,7 @@ function addCustomRubro(){
   const diaPago = parseInt(document.getElementById("newRubroDia").value)||0;
   const icono = document.getElementById("newRubroIcono").value || "";
   if(!nombre){ toast("Ponle un nombre al rubro."); return; }
+  if(ccRubroNombreRepetido(nombre, -1)){ toast("Ya existe un rubro con ese nombre."); return; }
   const maxPrio = state.rubros.reduce((m,r)=>Math.max(m,r.prioridad),0);
   const nuevoRubro = {
     nombre, tipo, prioridad:maxPrio+1, modo,
@@ -9554,6 +9733,7 @@ if(typeof supabase !== "undefined"){
       localStorage.setItem(ccClaveSync(), JSON.stringify({ hash: hash, fecha: fechaISO || null }));
       if(baseJSON != null) localStorage.setItem(ccClaveBase(), baseJSON);
     }catch(e){}
+    if(baseJSON != null) ccCacheHuellaBase = null;
   }
   // Celular y nube quedaron iguales: la base es lo que hay en la nube.
   function ccMarcarSincronizado(fechaISO, baseJSON){
@@ -9669,7 +9849,7 @@ if(typeof supabase !== "undefined"){
       const btn = (id, txt, principal)=> '<button id="' + id + '" style="width:100%; margin-top:' + (principal ? "16px" : "8px") + '; background:' + (principal ? "var(--brand-dark)" : "var(--surface-2)") + '; color:' + (principal ? "#fff" : "var(--ink)") + '; border:none; border-radius:12px; padding:13px; font-weight:' + (principal ? 800 : 700) + '; cursor:pointer;">' + txt + '</button>';
       const ov = document.createElement("div");
       ov.id = "ccModalDiferencias";
-      ov.style.cssText = "position:fixed; inset:0; z-index:9998; background:rgba(0,0,0,.55); display:flex; align-items:center; justify-content:center; padding:16px;";
+      ov.style.cssText = "position:fixed; inset:0; z-index:10050; background:rgba(0,0,0,.55); display:flex; align-items:center; justify-content:center; padding:16px;";
       ov.innerHTML = '<div style="background:var(--surface); color:var(--ink); border-radius:20px; padding:20px; max-width:420px; width:100%; max-height:calc(100vh - 32px); overflow-y:auto; box-shadow:0 20px 50px rgba(0,0,0,.3);">'
         + '<div style="font-size:30px; text-align:center;">☁️</div>'
         + (conBase
@@ -9720,7 +9900,18 @@ if(typeof supabase !== "undefined"){
       const botonUnir = ov.querySelector(conBase ? "#ccDifGuardar" : "#ccDifUnir");
       botonUnir.onclick = ()=>{
         const { elecciones, faltan } = leerElecciones();
-        if(faltan){ toast("Elige cuál dejar en " + (faltan === 1 ? "el dato cambiado" : "los " + faltan + " datos cambiados")); return; }
+        if(faltan){
+          // El aviso va dentro de la ventana (un toast quedaría tapado por ella).
+          let aviso = ov.querySelector("#ccDifAviso");
+          if(!aviso){
+            aviso = document.createElement("div");
+            aviso.id = "ccDifAviso";
+            aviso.style.cssText = "color:var(--red); font-weight:700; font-size:13px; text-align:center; margin-top:14px;";
+            botonUnir.parentNode.insertBefore(aviso, botonUnir);
+          }
+          aviso.textContent = "Elige cuál dejar en " + (faltan === 1 ? "el dato cambiado" : "los " + faltan + " datos cambiados") + ".";
+          return;
+        }
         cerrar({ modo:"unir", elecciones,
                  conservarCelular: leerCasillas("celular", diff.soloCelular),
                  conservarNube: leerCasillas("nube", diff.soloNube) });
@@ -9751,25 +9942,43 @@ if(typeof supabase !== "undefined"){
       const nubeEstado = hidratar(ccConCamposDelCelular(nube.datos, state), defaultState());
       const baseJSON = ccLeerBase();
       let resultado;
+      // Si mientras la ventana de diferencias está abierta se guarda algo más
+      // en este celular (por ejemplo, un abono que estaba a medio hacer), se une
+      // encima de lo elegido en vez de perderse.
+      let localAntesDeVentana = null;
+      const conLoHechoDuranteLaVentana = (res)=>{
+        if(!localAntesDeVentana || JSON.stringify(state) === localAntesDeVentana.json) return res;
+        const u2 = ccUnir3(localAntesDeVentana.estado, state, res);
+        ccAplicarElecciones(u2.estado, u2.conflictos, {}, "celular");
+        return u2.estado;
+      };
+      const recordarAntesDeVentana = ()=>{
+        const json = JSON.stringify(state);
+        localAntesDeVentana = { json, estado: JSON.parse(json) };
+      };
       if(baseJSON){
         const baseEstado = hidratar(ccConCamposDelCelular(JSON.parse(baseJSON), state), defaultState());
         const u = ccUnir3(baseEstado, state, nubeEstado);
         if(u.conflictos.length){
           ccGuardarCopiaAntesDeSincronizar();
+          recordarAntesDeVentana();
           const d = await ccPreguntarDiferencias({ soloCelular:[], soloNube:[], cambiados:u.conflictos }, { conBase:true });
           ccAplicarElecciones(u.estado, u.conflictos, d.elecciones);
         }
-        resultado = u.estado;
+        resultado = conLoHechoDuranteLaVentana(u.estado);
       } else {
         const diff = ccCompararEstados(state, nubeEstado);
         if(diff.total === 0){
           resultado = nubeEstado;
         } else {
           ccGuardarCopiaAntesDeSincronizar();
+          recordarAntesDeVentana();
+          const localVisto = localAntesDeVentana.estado;
           const d = await ccPreguntarDiferencias(diff, { conBase:false });
           if(d.modo === "nube") resultado = nubeEstado;
-          else if(d.modo === "celular") resultado = JSON.parse(JSON.stringify(state));
-          else resultado = ccUnirEstados(state, nubeEstado, diff, d);
+          else if(d.modo === "celular") resultado = JSON.parse(localAntesDeVentana.json);
+          else resultado = ccUnirEstados(localVisto, nubeEstado, diff, d);
+          resultado = conLoHechoDuranteLaVentana(resultado);
         }
       }
       state = hidratar(ccConCamposDelCelular(resultado, state), defaultState());
@@ -9790,6 +9999,7 @@ if(typeof supabase !== "undefined"){
       return { sinCambiosPropios: igualANube };
     } finally {
       ccUniendo = false;
+      setTimeout(ccTraerNovedades, 0);
     }
   }
 
@@ -9809,12 +10019,30 @@ if(typeof supabase !== "undefined"){
       return d.ok ? { ok:true, fecha: d.actualizado_en } : { conflicto:true, fecha: d.actualizado_en };
     }
     if(!ccEsFuncionFaltante(r.error)) return { error: r.error };
-    const actual = await sbFamiliar.from("estado_app").select("actualizado_en").eq("hogar_id", ccHogarId).maybeSingle();
-    if(actual.error) return { error: actual.error };
-    if(actual.data && !ccMismaFecha(actual.data.actualizado_en, base)) return { conflicto:true, fecha: actual.data.actualizado_en };
-    const u = await sbFamiliar.from("estado_app").upsert({ hogar_id: ccHogarId, datos }).select("actualizado_en").maybeSingle();
-    if(u.error) return { error: u.error };
-    return { ok:true, fecha: u.data ? u.data.actualizado_en : null };
+    // Mismo candado, en un solo paso: solo se actualiza si la fecha de la nube
+    // sigue siendo "base" (si otro guardó antes, no se actualiza ninguna fila).
+    const leerActual = async ()=>{
+      const a = await sbFamiliar.from("estado_app").select("actualizado_en").eq("hogar_id", ccHogarId).maybeSingle();
+      if(a.error) return { error: a.error };
+      return a.data ? { conflicto:true, fecha: a.data.actualizado_en } : null;
+    };
+    if(base){
+      const u = await sbFamiliar.from("estado_app").update({ datos }).eq("hogar_id", ccHogarId).eq("actualizado_en", base).select("actualizado_en");
+      if(u.error) return { error: u.error };
+      if(u.data && u.data.length) return { ok:true, fecha: u.data[0].actualizado_en };
+      const a = await leerActual();
+      if(a) return a;
+    }
+    // Sin base (o la fila ya no existe): solo se crea; si ya existía, es conflicto.
+    const i = await sbFamiliar.from("estado_app").insert({ hogar_id: ccHogarId, datos }).select("actualizado_en").maybeSingle();
+    if(i.error){
+      if(String(i.error.code) === "23505" || /duplicate/i.test(String(i.error.message || ""))){
+        const a = await leerActual();
+        if(a) return a;
+      }
+      return { error: i.error };
+    }
+    return { ok:true, fecha: i.data ? i.data.actualizado_en : null };
   }
 
   /* ---- Subir a la nube cada vez que se guarda localmente ---- */
@@ -9853,12 +10081,17 @@ if(typeof supabase !== "undefined"){
   });
 
   // ¿Lo que tiene este celular es distinto de la base (hay algo que subir)?
+  // La huella de la base se calcula una sola vez (cambia solo cuando cambia la base).
+  let ccCacheHuellaBase = null;
   function ccHayCambiosParaSubir(){
-    const baseJSON = ccLeerBase();
-    if(!baseJSON) return true;
     try{
-      const baseEstado = hidratar(ccConCamposDelCelular(JSON.parse(baseJSON), state), defaultState());
-      return ccCompararEstados(state, baseEstado).total > 0;
+      if(!ccCacheHuellaBase || ccCacheHuellaBase.hogar !== ccHogarId){
+        const baseJSON = ccLeerBase();
+        if(!baseJSON) return true;
+        const baseEstado = hidratar(ccConCamposDelCelular(JSON.parse(baseJSON), state), defaultState());
+        ccCacheHuellaBase = { hogar: ccHogarId, huella: ccHuellaSync(baseEstado) };
+      }
+      return ccHuellaSync(state) !== ccCacheHuellaBase.huella;
     }catch(e){ return true; }
   }
 
@@ -9897,7 +10130,10 @@ if(typeof supabase !== "undefined"){
             ccQuitarMarcaPendiente();
             ccMarcarSincronizado(r.fecha, datosJSON);
           } else {
-            ccSubidaPendiente = true; // se cambió algo mientras se subía
+            // Se cambió algo mientras se subía: lo que quedó en la nube (la
+            // nueva base) es lo que se subió, y este celular sigue con cambios.
+            ccGuardarMarca(null, r.fecha, datosJSON);
+            ccSubidaPendiente = true;
           }
           ccEsperaReintento = 5000;
           ccMostrarBannerSync("☁️ Datos subidos a la nube", "#0B7D5C", true);
@@ -9905,7 +10141,10 @@ if(typeof supabase !== "undefined"){
         } else if(r.conflicto){
           // Otro celular guardó algo mientras tanto: se trae, se une y se reintenta.
           const nube = await ccObtenerEstadoNube();
-          if(!nube || nube.error) throw new Error("no se pudo leer la nube para unir");
+          if(nube && nube.error) throw new Error("no se pudo leer la nube para unir");
+          // La fila del hogar existe pero está vacía: no hay nada que unir, se
+          // vuelve a guardar sobre esa versión.
+          if(!nube){ ccBaseNube = r.fecha || null; continue; }
           const u = await ccUnirConNube(nube);
           if(u.sinCambiosPropios){ ccQuitarMarcaPendiente(); exito = true; }
         } else {
@@ -9925,12 +10164,37 @@ if(typeof supabase !== "undefined"){
       if(exito){ ccSubidaPendiente = false; ccSubirANube(); }
       else ccProgramarReintento();
     }
+    setTimeout(ccTraerNovedades, 0);
   }
 
   /* ---- Llegó una versión nueva de la nube (tiempo real o al volver a la app) ---- */
+  // Llegó un aviso de la nube mientras se subía o se unía: se trae al terminar.
+  let ccNovedadPendiente = false;
+  async function ccTraerNovedades(){
+    if(!ccNovedadPendiente || ccSubiendoAhora || ccUniendo || !ccSincronizacionActiva()) return;
+    ccNovedadPendiente = false;
+    try{
+      const nube = await ccObtenerEstadoNube();
+      if(nube && nube.error){ ccNovedadPendiente = true; ccProgramarRevision(); return; }
+      if(!nube || ccMismaFecha(nube.actualizado_en, ccBaseNube)) return;
+      await ccRecibirDeNube(nube, "☁️ Se actualizó con un cambio de otro dispositivo de tu hogar");
+    }catch(e){ ccNovedadPendiente = true; ccProgramarRevision(); }
+  }
+  let ccTimerRevision = null;
+  function ccProgramarRevision(){
+    if(ccTimerRevision) return;
+    ccTimerRevision = setTimeout(()=>{ ccTimerRevision = null; ccTraerNovedades(); }, 15000);
+  }
   async function ccRecibirDeNube(nube, aviso){
-    if(ccSubiendoAhora || ccUniendo) return;       // la subida en curso ya la va a unir
+    // Ocupado subiendo o uniendo: no se pierde, se trae apenas termine.
+    if(ccSubiendoAhora || ccUniendo){ ccNovedadPendiente = true; return; }
     if(ccEsRespuestaDesactualizada(nube.actualizado_en)) return;
+    if(window.ccPuedeEditar === false){
+      // Integrante sin permiso de editar: siempre queda igual a la nube.
+      ccAplicarEstadoNube(nube);
+      if(aviso) ccMostrarBannerSync(aviso, "#0B7D5C", true);
+      return;
+    }
     const hayCambiosPropios = ccSubidaPendiente || ccHaySubidaPendienteGuardada() || !ccLocalSinCambiosDesdeSync();
     if(hayCambiosPropios){
       const u = await ccUnirConNube(nube);
@@ -9972,7 +10236,12 @@ if(typeof supabase !== "undefined"){
         filter: "hogar_id=eq." + ccHogarId
       }, (payload)=>{
         const nuevo = payload.new && payload.new.datos;
-        if(!nuevo) return;
+        if(!nuevo || typeof nuevo !== "object" || !payload.new.actualizado_en){
+          // El aviso llegó sin los datos (por ejemplo, porque son muy grandes): se traen.
+          ccNovedadPendiente = true;
+          ccTraerNovedades();
+          return;
+        }
         ccRecibirDeNube({ datos: nuevo, actualizado_en: payload.new.actualizado_en },
           "☁️ Se actualizó con un cambio de otro dispositivo de tu hogar").catch(e=> console.error("tiempo real:", e));
       })
@@ -10309,41 +10578,32 @@ if(typeof supabase !== "undefined"){
     const localSinCambios = !pendiente && ccLocalSinCambiosDesdeSync();
     const puedeEditar = window.ccPuedeEditar !== false;
 
-    if(nube === null && resultado.nuevo && localEsDeOtroHogar){
-      // Hogar recién creado, pero lo que hay en el celular es de otro hogar:
-      // se guarda una copia aparte (por si acaso) y este hogar empieza vacío.
-      // Los datos del hogar anterior siguen intactos en la nube de ese hogar.
-      ccGuardarCopiaAntesDeSincronizar();
+    if(nube === null && localEsDeOtroHogar){
+      // La nube de este hogar está vacía, pero lo que hay en el celular es de
+      // OTRO hogar: se guarda una copia aparte (por si acaso) y este hogar
+      // empieza vacío. Los datos del hogar anterior siguen en la nube de ese hogar.
+      if(ccEstadoLocalTieneDatos()) ccGuardarCopiaAntesDeSincronizar();
       state = defaultState();
       saveState();
       renderAll();
-      ccMostrarBannerSync("☁️ Hogar nuevo creado — empieza vacío. Los datos del hogar anterior siguen guardados en ese hogar (y hay una copia en Ajustes).", "#0B7D5C", true);
+      ccMostrarBannerSync("☁️ Hogar conectado — empieza vacío. Los datos del hogar anterior siguen guardados en ese hogar (y hay una copia en Ajustes).", "#0B7D5C", true);
       ccActivarSyncSaveState();
       ccActivarRealtime();
-      ccSubirANube();
+      if(puedeEditar) await ccSubirANube();
       localStorage.setItem(claveYaConectado, "1");
-    } else if(nube === null && pendiente){
-      // La nube de este hogar está vacía y quedó un cambio sin subir: se sube.
+    } else if(nube === null){
+      // Se pudo leer la nube y este hogar todavía no tiene nada guardado: lo
+      // que hay en este celular es el punto de partida. Se sube con candado
+      // (si otro celular alcanza a guardar primero, se une con lo suyo).
       ccActivarSyncSaveState();
       ccActivarRealtime();
-      ccMostrarBannerSync("☁️ Terminando de subir un cambio pendiente...", "#0B7D5C", false);
-      await ccSubirANube();
-    } else if(nube === null){
-      if(resultado.nuevo){
-        // Este hogar lo acabamos de crear nosotros mismos en esta misma
-        // conexión: no hay nada real en la nube todavía, así que es seguro
-        // subir lo que ya tienes en este celular como punto de partida.
-        ccMostrarBannerSync("☁️ Conectado — subiendo lo que ya tienes en este celular", "#0B7D5C", true);
-        ccActivarSyncSaveState();
-        ccActivarRealtime();
-        ccSubirANube();
-        localStorage.setItem(claveYaConectado, "1");
+      if(puedeEditar && (pendiente || resultado.nuevo || ccEstadoLocalTieneDatos())){
+        ccMostrarBannerSync(pendiente ? "☁️ Terminando de subir un cambio pendiente..." : "☁️ Conectado — subiendo lo que ya tienes en este celular", "#0B7D5C", !pendiente);
+        await ccSubirANube();
       } else {
-        // El hogar ya existía pero no tiene datos guardados todavía (o no se
-        // pudieron confirmar) — NO se activa la subida automática, para no
-        // arriesgarse a pisar datos reales de tu hogar.
-        ccMostrarBannerSync("⚠️ No se pudieron confirmar los datos de tu hogar en la nube. Vuelve a intentar con mejor conexión antes de seguir — por ahora no se sube ni se cambia nada.", "#C0392B", false);
+        ccMostrarBannerSync("☁️ Conectado a tu hogar", "#0B7D5C", true);
       }
+      localStorage.setItem(claveYaConectado, "1");
     } else if(!puedeEditar){
       // Integrante sin permiso de editar: siempre recibe lo de la nube y nunca
       // sube. Si este celular tenía algo distinto, antes se guarda una copia.
