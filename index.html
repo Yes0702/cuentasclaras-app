@@ -1018,7 +1018,7 @@
       <h2 class="section-title">Exportar e importar<div class="rule"></div></h2>
       <div class="card">
         <div class="hint" style="margin-bottom:10px;">El <b>Excel</b> sirve para ver o imprimir tus datos, pero <b>no se puede volver a cargar</b> en la app.</div>
-        <button class="btn-primary" style="margin-top:0;" onclick="exportXLSX()">⬇ Exportar a Excel (.xlsx)</button>
+        <button class="btn-primary" style="margin-top:0;" onclick="ccIrAExportar()">⬇ Exportar a Excel o PDF (elige el periodo)</button>
         <div style="margin-top:14px; padding:12px; background:var(--brand-soft); border:1px solid #BFE9DA; border-radius:11px;">
           <div class="hint" style="color:var(--brand-dark); font-weight:600; margin-bottom:4px;">💾 Respaldo de todos tus datos</div>
           <div class="hint" style="color:var(--brand-dark); margin-bottom:8px;">Este es el <b>único</b> archivo que puedes volver a cargar. Úsalo para cambiar de celular o antes de desinstalar.</div>
@@ -1490,13 +1490,14 @@
 
       <div id="bloqueSeguridad"></div>
 
-      <h2 class="section-title">Exportar resumen a PDF<div class="rule"></div></h2>
+      <h2 class="section-title" id="secExportar">Exportar a PDF o Excel<div class="rule"></div></h2>
       <div class="card">
         <label>¿Qué periodo quieres exportar?</label>
         <select id="pdfPeriodo" onchange="ccActualizarCamposPDF()" style="margin-bottom:10px;">
           <option value="mes">Este mes</option>
           <option value="anio">Este año completo</option>
           <option value="rango">Rango personalizado</option>
+          <option value="todo">Todo (desde el primer gasto)</option>
         </select>
         <div id="pdfRangoCampos" style="display:none;">
           <div class="field-row">
@@ -1508,14 +1509,16 @@
             <div><label>Hasta (año)</label><select id="pdfAnioFin"></select></div>
           </div>
         </div>
-        <button class="btn-primary" style="width:100%; margin-top:12px;" onclick="ccGenerarPDFResumen()">📄 Generar PDF</button>
-        <div class="hint" style="margin-top:8px;">Incluye ingreso, gasto por rubro, y tus deudas activas. Se guarda solo en tu celular.</div>
+        <div style="display:flex; gap:8px; margin-top:12px;">
+          <button class="btn-primary" style="flex:1; margin:0;" onclick="ccGenerarPDFResumen()">📄 PDF</button>
+          <button class="btn-primary" style="flex:1; margin:0;" onclick="exportXLSX()">📊 Excel</button>
+        </div>
+        <div class="hint" style="margin-top:8px;">Los dos usan el periodo que elijas arriba. El PDF trae el resumen (ingreso, gasto por rubro y deudas); el Excel trae además cada gasto en su propia fila. Se guardan solo en tu celular.</div>
       </div>
 
       <h2 class="section-title">Datos<div class="rule"></div></h2>
       <div class="card">
-        <button class="btn-primary" style="margin-top:0;" onclick="exportXLSX()">⬇ Exportar a Excel (.xlsx)</button>
-        <div id="secRespaldoAjustes" style="margin-top:14px; padding:12px; background:var(--brand-soft); border:1px solid #BFE9DA; border-radius:11px;">
+        <div id="secRespaldoAjustes" style="margin-top:0; padding:12px; background:var(--brand-soft); border:1px solid #BFE9DA; border-radius:11px;">
           <div class="hint" style="color:var(--brand-dark); font-weight:600; margin-bottom:8px;">💾 Respaldo de todos tus datos</div>
           <button class="btn-primary" style="margin-top:0;" onclick="exportBackupJSON()">⬇ Descargar respaldo (guardar)</button>
           <button class="btn-outline" style="width:100%; margin-top:8px;" onclick="document.getElementById('importJsonFileAj').click()">⬆ Importar respaldo (restaurar)</button>
@@ -2954,9 +2957,58 @@ function ccActualizarCamposPDF(){
   const box = document.getElementById("pdfRangoCampos");
   if(box) box.style.display = (per==="rango") ? "block" : "none";
 }
+/* Periodo elegido en "Exportar a PDF o Excel" (lo usan los dos).
+   Devuelve { meses:[[mes,anio],...], titulo, archivo } o null si no es válido. */
+function ccPeriodoExportacion(){
+  const sel = document.getElementById("pdfPeriodo");
+  const periodo = sel ? sel.value : "mes";
+  let meses, titulo;
+  if(periodo === "anio"){
+    meses = MESES.map(m=>[m, state.anioActivo]);
+    titulo = "Año " + state.anioActivo;
+  } else if(periodo === "rango"){
+    const mI = document.getElementById("pdfMesInicio").value, aI = document.getElementById("pdfAnioInicio").value;
+    const mF = document.getElementById("pdfMesFin").value, aF = document.getElementById("pdfAnioFin").value;
+    meses = ccMesesEnRango(mI, aI, mF, aF);
+    if(meses.length===0){ toast("El rango no es válido: el 'Desde' debe ser antes del 'Hasta'."); return null; }
+    titulo = meses.length === 1 ? mI+" "+aI : mI+" "+aI+" a "+mF+" "+aF;
+  } else if(periodo === "todo"){
+    const claves = state.gastos.map(g=> Number(g.anio)*100 + MESES.indexOf(g.mes)).filter(k=> k >= 0 && isFinite(k));
+    claves.push(state.anioActivo*100 + MESES.indexOf(state.mesActivo));
+    const min = Math.min(...claves), max = Math.max(...claves);
+    meses = ccMesesEnRango(MESES[min%100], Math.floor(min/100), MESES[max%100], Math.floor(max/100));
+    titulo = "Todo (" + meses[0][0]+" "+meses[0][1] + " a " + meses[meses.length-1][0]+" "+meses[meses.length-1][1] + ")";
+  } else {
+    meses = [[state.mesActivo, state.anioActivo]];
+    titulo = state.mesActivo + " " + state.anioActivo;
+  }
+  const archivo = (meses.length === 1 ? meses[0][0]+"_"+meses[0][1]
+    : meses[0][0]+"_"+meses[0][1]+"-"+meses[meses.length-1][0]+"_"+meses[meses.length-1][1]);
+  return { meses, titulo, archivo };
+}
+// Desde Gastos: lleva a la tarjeta de exportar en Ajustes (ahí se elige el periodo).
+function ccIrAExportar(){
+  showView("ajustes");
+  setTimeout(()=>{
+    const el = document.getElementById("secExportar");
+    const cont = document.getElementById("views");
+    if(el && cont) cont.scrollTo({ top: el.offsetTop - 70, behavior:"smooth" });
+  }, 150);
+}
 function ccLlenarSelectoresPDF(){
   const mI = document.getElementById("pdfMesInicio");
-  if(!mI || mI.dataset.filled) return;
+  if(!mI) return;
+  // Los años se actualizan siempre (por ejemplo, cuando llegan datos de la nube
+  // con meses de otro año), sin cambiar lo que ya estaba elegido.
+  const aniosAhora = aniosConDatos();
+  ["pdfAnioInicio","pdfAnioFin"].forEach(id=>{
+    const sel = document.getElementById(id);
+    if(!sel || !mI.dataset.filled) return;
+    const elegido = sel.value;
+    sel.innerHTML = aniosAhora.map(a=>`<option value="${a}">${a}</option>`).join("");
+    if(elegido && aniosAhora.includes(Number(elegido))) sel.value = elegido;
+  });
+  if(mI.dataset.filled) return;
   const mesOpts = MESES.map(m=>`<option value="${m}">${m}</option>`).join("");
   const anios = aniosConDatos();
   const anioOpts = anios.map(a=>`<option value="${a}">${a}</option>`).join("");
@@ -3000,22 +3052,10 @@ function ccCargarImagenComoDataURL(url){
 }
 async function ccGenerarPDFResumen(){
   if(!window.jspdf || !window.jspdf.jsPDF){ toast("No se pudo cargar el generador de PDF."); return; }
-  const periodo = document.getElementById("pdfPeriodo").value;
-  let meses;
-  let tituloPeriodo;
-  if(periodo === "mes"){
-    meses = [[state.mesActivo, state.anioActivo]];
-    tituloPeriodo = state.mesActivo + " " + state.anioActivo;
-  } else if(periodo === "anio"){
-    meses = MESES.map(m=>[m, state.anioActivo]);
-    tituloPeriodo = "Año " + state.anioActivo;
-  } else {
-    const mI = document.getElementById("pdfMesInicio").value, aI = document.getElementById("pdfAnioInicio").value;
-    const mF = document.getElementById("pdfMesFin").value, aF = document.getElementById("pdfAnioFin").value;
-    meses = ccMesesEnRango(mI, aI, mF, aF);
-    if(meses.length===0){ toast("El rango no es válido."); return; }
-    tituloPeriodo = mI+" "+aI+" a "+mF+" "+aF;
-  }
+  const per = ccPeriodoExportacion();
+  if(!per) return;
+  const meses = per.meses;
+  const tituloPeriodo = per.titulo;
 
   // ---- Reunir datos del periodo ----
   // El ingreso principal se resuelve MES A MES (no con el valor "de hoy"), para que
@@ -5927,56 +5967,89 @@ ${hojas.map((h,i)=>`<Relationship Id="rId${i+1}" Type="http://schemas.openxmlfor
 
 async function exportXLSX(){
   try{
-    const anio = state.anioActivo;
+    const per = ccPeriodoExportacion();
+    if(!per) return;
+    const meses = per.meses;
+    const enPeriodo = new Set(meses.map(([m,a])=> m+"|"+a));
+    const gastosPeriodo = state.gastos.filter(g=> enPeriodo.has(g.mes+"|"+g.anio));
     const hojas = [];
+
+    // Ingreso y gasto de cada mes del periodo (el ingreso, con lo que tenía ESE mes).
+    const ingresoDe = (m,a)=>{
+      const snap = ccResolverSnapshotIngresoPrincipalPara(m, a);
+      const oc = (state.ingresosOcasionales||[]).filter(x=>x.mes===m && x.anio===a).reduce((t,x)=>t+(x.monto||0),0);
+      return (snap.monto||0) + oc;
+    };
+    const verIngresos = window.ccPuedeVerIngresos !== false;
+    const ingresoPeriodo = meses.reduce((t,[m,a])=> t + ingresoDe(m,a), 0);
+    const gastadoPeriodo = gastosPeriodo.reduce((t,g)=> t + (g.monto||0), 0);
 
     // 1. Resumen
     const sob = sobrante();
-    hojas.push({nombre:"Resumen", filas:[
+    const filasResumen = [
       ["Cuentas Claras · Resumen"],
       ["Generado", new Date().toLocaleString("es-CO")],
-      ["Periodo", `${MESES_LARGO[MESES.indexOf(state.mesActivo)]} ${anio}`],
+      ["Periodo", per.titulo],
+      ["Meses", meses.length],
       [],
-      ["Ingreso mensual", Math.round(state.ingreso)],
+      ["Ingreso del periodo", verIngresos ? Math.round(ingresoPeriodo) : "—"],
+      ["Gastado en el periodo", Math.round(gastadoPeriodo)],
+      ["Disponible (ingreso − gastado)", verIngresos ? Math.round(ingresoPeriodo - gastadoPeriodo) : "—"],
+      ["Cantidad de gastos", gastosPeriodo.length],
+      [],
+      ["Presupuesto de hoy (mensual)"],
+      ["Ingreso mensual", verIngresos ? Math.round(state.ingreso) : "—"],
       ["Total gastos fijos", Math.round(totalFijos())],
-      ["Sobrante a repartir", Math.round(sob)],
-      ["% del sobrante repartido", Math.round(pctRepartido()*10)/10],
+      ["Sobrante a repartir", verIngresos ? Math.round(sob) : "—"],
       ["Total presupuestado (incluye pagos de deuda)", Math.round(totalPresupuestado()+totalPagosDeuda())],
-      ["Gastado en el mes", Math.round(totalRealMes(state.mesActivo, anio))],
-      ["Gastado en el año", Math.round(totalRealMes("Todos", anio))],
       [],
-      ["Deuda pendiente", Math.round(totalDeuda())],
+      ["Cómo está hoy"],
+      ["Deuda pendiente", ccVerDeudasPermitido() ? Math.round(totalDeuda()) : "—"],
       ["Ahorrado en metas", Math.round(totalAhorradoMetas())],
       ["Fondo de emergencia (ahorrado)", Math.round(state.fondoEmergencia.ahorrado)],
       ["Fondo de emergencia (objetivo)", Math.round(totalPresupuestado()*(state.fondoEmergencia.meses||0))]
-    ]});
+    ];
+    hojas.push({nombre:"Resumen", filas:filasResumen});
 
-    // 2. Presupuesto
-    const filasPresu = [["Rubro","Tipo","Prioridad","Cálculo","Cantidad","Monto mensual",`Gastado ${state.mesActivo} ${anio}`,"Diferencia"]];
+    // 2. Presupuesto vs. lo gastado en el periodo
+    const n = meses.length;
+    const filasPresu = [["Rubro","Tipo","Prioridad","Cálculo","Cantidad","Monto mensual",
+      n===1 ? "Gastado "+per.titulo : "Presupuesto del periodo ("+n+" meses)", ...(n===1 ? [] : ["Gastado en el periodo"]), "Diferencia"]];
+    const gastadoRubro = {};
+    gastosPeriodo.forEach(g=>{ gastadoRubro[g.rubro] = (gastadoRubro[g.rubro]||0) + (g.monto||0); });
     state.rubros.slice().sort((a,b)=>a.prioridad-b.prioridad).forEach(r=>{
       const m = Math.round(montoRubro(r));
-      const real = Math.round(realPorRubro(r.nombre, state.mesActivo, anio));
-      filasPresu.push([r.nombre, r.tipo, r.prioridad,
+      const real = Math.round(gastadoRubro[r.nombre]||0);
+      const fila = [ccNombreRubroVisible(r.nombre), r.tipo, r.prioridad,
         r.modo==="valor"?"Valor fijo":(r.modo==="pctIngreso"?"% del total del dinero":"% del sobrante"),
-        r.modo==="valor"?Math.round(r.valor):r.pct, m, real, m-real]);
+        r.modo==="valor"?Math.round(r.valor):r.pct, m];
+      if(n===1) fila.push(real, m-real); else fila.push(m*n, real, m*n-real);
+      filasPresu.push(fila);
     });
     hojas.push({nombre:"Presupuesto", filas:filasPresu, filtro:true});
 
-    // 3. Gastos
+    // 3. Gastos del periodo, uno por fila
     const filasGastos = [["Fecha","Mes","Año","Rubro","Monto","Nota"]];
-    state.gastos.slice().sort((a,b)=>(a.fecha||"").localeCompare(b.fecha||""))
-      .forEach(g=> filasGastos.push([g.fecha, g.mes, g.anio, g.rubro, Math.round(g.monto), g.nota]));
+    gastosPeriodo.slice().sort((a,b)=> (Number(a.anio)*100+MESES.indexOf(a.mes)) - (Number(b.anio)*100+MESES.indexOf(b.mes)) || (a.fecha||"").localeCompare(b.fecha||""))
+      .forEach(g=> filasGastos.push([g.fecha, g.mes, g.anio, ccNombreRubroVisible(g.rubro), Math.round(g.monto), g.nota]));
     hojas.push({nombre:"Gastos", filas:filasGastos, filtro:true});
 
-    // 4. Comparativo mensual del año activo
-    const filasComp = [["Rubro","Tipo","Presupuesto mensual"].concat(MESES).concat(["Total "+anio])];
-    state.rubros.slice().sort((a,b)=>a.prioridad-b.prioridad).forEach(r=>{
-      const serie = MESES.map(m=> Math.round(realPorRubro(r.nombre, m, anio)));
-      filasComp.push([r.nombre, r.tipo, Math.round(montoRubro(r))].concat(serie).concat([serie.reduce((s,v)=>s+v,0)]));
-    });
-    const totMes = MESES.map(m=> Math.round(totalRealMes(m, anio)));
-    filasComp.push(["TOTAL","",Math.round(totalPresupuestado())].concat(totMes).concat([totMes.reduce((s,v)=>s+v,0)]));
-    hojas.push({nombre:"Comparativo "+anio, filas:filasComp, filtro:true});
+    // 4. Comparativo mes a mes (solo si el periodo tiene más de un mes)
+    if(n > 1){
+      const etiquetas = meses.map(([m,a])=> m+" "+a);
+      const filasComp = [["Rubro","Tipo","Presupuesto mensual"].concat(etiquetas).concat(["Total"])];
+      state.rubros.slice().sort((a,b)=>a.prioridad-b.prioridad).forEach(r=>{
+        const serie = meses.map(([m,a])=> Math.round(realPorRubro(r.nombre, m, a)));
+        filasComp.push([ccNombreRubroVisible(r.nombre), r.tipo, Math.round(montoRubro(r))].concat(serie).concat([serie.reduce((t,v)=>t+v,0)]));
+      });
+      const totMes = meses.map(([m,a])=> Math.round(totalRealMes(m, a)));
+      filasComp.push(["TOTAL","",Math.round(totalPresupuestado())].concat(totMes).concat([totMes.reduce((t,v)=>t+v,0)]));
+      if(verIngresos){
+        const ingMes = meses.map(([m,a])=> Math.round(ingresoDe(m,a)));
+        filasComp.push(["INGRESO","",""].concat(ingMes).concat([ingMes.reduce((t,v)=>t+v,0)]));
+      }
+      hojas.push({nombre:"Comparativo", filas:filasComp, filtro:true});
+    }
 
     // 5. Deudas
     const filasDeudas = [["Nombre","Deuda inicial","Saldo actual","Pago mensual","% pagado","Meses restantes"]];
@@ -6003,7 +6076,7 @@ async function exportXLSX(){
     const blob = construirXLSX(hojas);
     const buffer = await blob.arrayBuffer();
     const base64 = ccArrayBufferABase64(buffer);
-    await downloadFileBase64(`cuentas_claras_${anio}.xlsx`, base64, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "Cuentas Claras", "");
+    await downloadFileBase64(`cuentas_claras_${per.archivo}.xlsx`, base64, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "Cuentas Claras", "");
     toast("Excel descargado ✓");
   }catch(err){
     console.error(err);
@@ -8639,7 +8712,7 @@ function mensajeRecordatorio(){
   else {
     const dias = Math.floor((Date.now() - new Date(ultimo.fecha+"T00:00:00").getTime()) / 86400000);
     if(dias >= 1) extra = `Tu último gasto fue hace ${dias} día${dias===1?"":"s"}.`;
-    else extra = `Llevas ${gastosMes.length} gasto${gastosMes.length===1?"":"s"} este mes.`;
+    else extra = `Llevas ${gastosMes.length} gasto${gastosMes.length===1?"":"s"} en ${MESES_LARGO[new Date().getMonth()].toLowerCase()}.`;
   }
   return `Un momento para anotar tus gastos de hoy, así seguimos llevando las cuentas claras. ${extra}`;
 }
