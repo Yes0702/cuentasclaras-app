@@ -3274,6 +3274,7 @@ function aniosConDatos(){
    ===================================================================== */
 let ccVistaActual = "inicio";
 function showView(name){
+  if(typeof ccRevisarDiaFormGasto === "function") ccRevisarDiaFormGasto();
   if(name === "gastos" && ccVistaActual !== "gastos" && typeof ccFechaGastoAHoy === "function") ccFechaGastoAHoy();
   // Si sales de Deudas, los formularios de "Nueva deuda"/"Agregar a existente" se
   // cierran solos — así no quedan desplegados la próxima vez que entres a la pestaña.
@@ -4890,8 +4891,11 @@ function ccFechaFormGasto(){
   const f = document.getElementById("gFecha");
   if(!f || !/^\d{4}-\d{2}-\d{2}$/.test(f.value)) return null;
   const d = new Date(f.value + "T00:00:00");
-  return isNaN(d) ? null : d;
+  if(isNaN(d)) return null;
+  return ccAnioRazonable(d.getFullYear()) ? d : null;
 }
+// Un año escrito a medias con el teclado ("26", "202") no es un año de verdad.
+function ccAnioRazonable(a){ return a >= 2000 && a <= ANIO_HOY + 5; }
 function ccSincronizarMesAnioGasto(){
   const d = ccFechaFormGasto();
   if(!d) return;
@@ -4917,6 +4921,7 @@ function ccRevisarDiaFormGasto(){
 }
 ["change","input"].forEach(ev=> document.getElementById("gFecha").addEventListener(ev, ccSincronizarMesAnioGasto));
 document.addEventListener("visibilitychange", ()=>{ if(document.visibilityState === "visible") ccRevisarDiaFormGasto(); });
+window.addEventListener("focus", ccRevisarDiaFormGasto);
 
 function addGasto(){
   if(!ccPuedeEditarCheck()) return;
@@ -4927,6 +4932,7 @@ function addGasto(){
   const monto = numFromMasked("gMonto");
   const nota = document.getElementById("gNota").value.trim();
   if(!fecha || monto<=0){ toast("Ingresa la fecha y un monto mayor a cero."); return; }
+  if(!ccFechaFormGasto()){ toast("Revisa la fecha: el año no es válido."); return; }
   state.gastos.push({id:uid(), fecha, mes, anio, rubro, monto, nota});
   if(!state.usoRubros) state.usoRubros = {};
   state.usoRubros[rubro] = (state.usoRubros[rubro]||0) + 1;
@@ -4934,6 +4940,9 @@ function addGasto(){
   document.getElementById("gNota").value = "";
   saveState();
   renderAll();
+  // Si para este gasto se cambió el Mes a mano, el siguiente vuelve a tomar
+  // el mes de la fecha (la fecha elegida se mantiene).
+  ccSincronizarMesAnioGasto();
   toast("Gasto registrado ✓");
 }
 
@@ -5471,6 +5480,7 @@ function saveGastoEdit(id){
   if(!fecha || monto<=0){ toast("Ingresa una fecha y un monto mayor a cero."); return; }
   // recalcular mes/año a partir de la fecha nueva
   const d = new Date(fecha + "T00:00:00");
+  if(isNaN(d) || !ccAnioRazonable(d.getFullYear())){ toast("Revisa la fecha: el año no es válido."); return; }
   g.rubro = rubro;
   g.monto = monto;
   g.fecha = fecha;
@@ -8010,7 +8020,7 @@ const CONFIG = {
   apiVersion: "https://api.github.com/repos/Yes0702/cuentasclaras/releases/latest",
   urlVersion: "https://github.com/Yes0702/cuentasclaras/releases/latest/download/version.json"
 };
-const APP_VERSION = "9.17";
+const APP_VERSION = "9.18";
 
 /* =====================================================================
    AVISO DE ACTUALIZACIÓN (revisa al abrir la app)
