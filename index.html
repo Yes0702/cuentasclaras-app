@@ -3274,6 +3274,7 @@ function aniosConDatos(){
    ===================================================================== */
 let ccVistaActual = "inicio";
 function showView(name){
+  if(name === "gastos" && ccVistaActual !== "gastos" && typeof ccFechaGastoAHoy === "function") ccFechaGastoAHoy();
   // Si sales de Deudas, los formularios de "Nueva deuda"/"Agregar a existente" se
   // cierran solos — así no quedan desplegados la próxima vez que entres a la pestaña.
   if(name !== "deudas" && typeof ccCerrarFormulariosDeuda === "function") ccCerrarFormulariosDeuda();
@@ -4853,14 +4854,19 @@ function fillMesAnioSelects(){
 
   const gMes = document.getElementById("gMes");
   const gAnio = document.getElementById("gAnio");
+  const fechaForm = ccFechaFormGasto();
   if(!gMes.dataset.filled){
     gMes.innerHTML = mesOpts;
-    gMes.value = state.mesActivo;
+    gMes.value = fechaForm ? MESES[fechaForm.getMonth()] : state.mesActivo;
     gMes.dataset.filled = "1";
   }
+  // El año de la fecha elegida siempre está en la lista (aunque no tenga gastos).
+  if(fechaForm && !rango.includes(fechaForm.getFullYear())){
+    rango.push(fechaForm.getFullYear()); rango.sort((a,b)=>a-b);
+  }
   const prevGA = gAnio.value;
-  gAnio.innerHTML = anioOpts;
-  gAnio.value = prevGA && rango.includes(+prevGA) ? prevGA : state.anioActivo;
+  gAnio.innerHTML = rango.map(a=>`<option value="${a}">${a}</option>`).join("");
+  gAnio.value = prevGA && rango.includes(+prevGA) ? prevGA : (fechaForm ? fechaForm.getFullYear() : state.anioActivo);
 
   const fMes = document.getElementById("filtroMes");
   if(!fMes.dataset.filled){
@@ -4875,14 +4881,42 @@ function fillMesAnioSelects(){
   else fAnio.value = prevFA || String(state.anioActivo);
 }
 
-document.getElementById("gFecha").addEventListener("change", e=>{
-  const d = new Date(e.target.value+"T00:00:00");
-  if(!isNaN(d)){
-    document.getElementById("gMes").value = MESES[d.getMonth()];
-    const gAnio = document.getElementById("gAnio");
-    if(Array.from(gAnio.options).some(o=>o.value===String(d.getFullYear()))) gAnio.value = d.getFullYear();
+/* ===== Fecha del formulario "Registrar gasto" =====
+   El Mes y el Año de abajo siempre siguen a la fecha elegida. Y la fecha vuelve
+   sola a HOY cuando entras a Gastos desde otra pestaña, al abrir la app y
+   cuando cambia el día: así nunca queda puesta una fecha vieja por descuido. */
+let ccFormGastoDia = null;   // día de calendario en que se dejó la fecha en "hoy"
+function ccFechaFormGasto(){
+  const f = document.getElementById("gFecha");
+  if(!f || !/^\d{4}-\d{2}-\d{2}$/.test(f.value)) return null;
+  const d = new Date(f.value + "T00:00:00");
+  return isNaN(d) ? null : d;
+}
+function ccSincronizarMesAnioGasto(){
+  const d = ccFechaFormGasto();
+  if(!d) return;
+  const gMes = document.getElementById("gMes");
+  if(gMes && gMes.options.length) gMes.value = MESES[d.getMonth()];
+  const gAnio = document.getElementById("gAnio");
+  if(gAnio){
+    const a = String(d.getFullYear());
+    if(!Array.from(gAnio.options).some(o=>o.value===a)) gAnio.insertAdjacentHTML("beforeend", `<option value="${a}">${a}</option>`);
+    gAnio.value = a;
   }
-});
+}
+function ccFechaGastoAHoy(){
+  const f = document.getElementById("gFecha");
+  if(!f) return;
+  f.value = fechaLocalHoy();
+  ccFormGastoDia = f.value;
+  ccSincronizarMesAnioGasto();
+}
+// Si la app quedó abierta y ya es otro día, la fecha vuelve a hoy.
+function ccRevisarDiaFormGasto(){
+  if(ccFormGastoDia && ccFormGastoDia !== fechaLocalHoy()) ccFechaGastoAHoy();
+}
+["change","input"].forEach(ev=> document.getElementById("gFecha").addEventListener(ev, ccSincronizarMesAnioGasto));
+document.addEventListener("visibilitychange", ()=>{ if(document.visibilityState === "visible") ccRevisarDiaFormGasto(); });
 
 function addGasto(){
   if(!ccPuedeEditarCheck()) return;
@@ -9203,7 +9237,7 @@ function renderAll(){
   renderDonacion();
 }
 
-document.getElementById("gFecha").value = fechaLocalHoy();
+ccFechaGastoAHoy();
 document.getElementById("feAporteFechaNueva").value = fechaLocalHoy();
 document.getElementById("invFecha").value = fechaLocalHoy();
 ["gMonto","dInicial","dSaldo","dPago","feAhorrado","feAporte","feAporteMontoNuevo","mObjetivo","mAhorrado","newIngresoMonto","invMonto","c4Monto","credMonto","existValor","dManejoValor","existAvanceValor","dAvanceValor"].forEach(id=>{
